@@ -1,0 +1,11 @@
+# .NET
+**/bin/
+**/obj/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Playwright
+**/playwright-report/
+**/test-results/
