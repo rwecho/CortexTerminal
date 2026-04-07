@@ -9,3 +9,6 @@
 # Playwright
 **/playwright-report/
 **/test-results/
+
+# Logs
+**/*.log
