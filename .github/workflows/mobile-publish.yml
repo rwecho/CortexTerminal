@@ -33,6 +33,7 @@ env:
   MOBILE_WEB_DIR: mobile
   MAUI_PROJECT: mobile/maui/CortexTerminal.MobileShell/CortexTerminal.MobileShell.csproj
   MAUI_WEBROOT: mobile/maui/CortexTerminal.MobileShell/Resources/Raw/wwwroot
+  XCODE_VERSION: latest-stable
 
 jobs:
   build-web:
@@ -98,6 +99,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select latest available Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
@@ -141,6 +150,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select latest available Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -209,6 +226,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select latest available Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
