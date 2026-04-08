@@ -10,6 +10,7 @@ permissions:
   contents: read
 
 env:
+  DOTNET_VERSION: 10.0.103
   WORKER_PROJECT: worker/src/CortexTerminal.Worker/CortexTerminal.Worker.csproj
 
 jobs:
@@ -23,7 +24,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Publish worker for linux-x64
         run: |
@@ -57,7 +58,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Publish worker for osx-arm64
         run: |
@@ -91,7 +92,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Publish worker for win-x64
         shell: pwsh

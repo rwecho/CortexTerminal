@@ -33,6 +33,7 @@ env:
   MOBILE_WEB_DIR: mobile
   MAUI_PROJECT: mobile/maui/CortexTerminal.MobileShell/CortexTerminal.MobileShell.csproj
   MAUI_WEBROOT: mobile/maui/CortexTerminal.MobileShell/Resources/Raw/wwwroot
+  DOTNET_VERSION: 10.0.103
   XCODE_VERSION: latest-stable
 
 jobs:
@@ -110,7 +111,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Install MAUI workloads
         run: dotnet workload install maui maccatalyst
@@ -162,7 +163,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Install MAUI workloads
         run: dotnet workload install maui android
@@ -238,7 +239,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Install MAUI workloads
         run: dotnet workload install maui ios
