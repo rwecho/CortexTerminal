@@ -22,12 +22,12 @@ export type RegisterGatewayUserPayload = {
   email?: string;
 };
 
-export type WorkerDeviceActivation = {
-  workerId: string;
+export type WorkerRegistrationKey = {
+  registrationKey: string;
+  subject: string;
+  username?: string | null;
   displayName: string;
-  userCode: string;
-  approvedBy: string;
-  approvedAtUtc: string;
+  issuedAtUtc: string;
 };
 
 function toFormBody(values: Record<string, string | undefined>): string {
@@ -119,23 +119,17 @@ export function createGatewayAuthClient(gatewayBaseUrl: string) {
       return readJsonOrThrow<GatewayPrincipal>(response);
     },
 
-    async activateWorkerDevice(
+    async issueWorkerRegistrationKey(
       accessToken: string,
-      userCode: string,
-    ): Promise<WorkerDeviceActivation> {
-      const response = await fetch(
-        `${normalizedBaseUrl}/api/auth/worker/device/activate`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ userCode }),
+    ): Promise<WorkerRegistrationKey> {
+      const response = await fetch(`${normalizedBaseUrl}/api/auth/worker/key`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
         },
-      );
+      });
 
-      return readJsonOrThrow<WorkerDeviceActivation>(response);
+      return readJsonOrThrow<WorkerRegistrationKey>(response);
     },
   };
 }

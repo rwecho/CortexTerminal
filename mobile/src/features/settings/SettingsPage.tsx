@@ -68,7 +68,7 @@ export function SettingsPage({
               <div>
                 <div className="text-sm font-semibold text-white">节点授权</div>
                 <div className="text-[11px] text-gray-500">
-                  管理 worker device pairing 与节点接入授权。
+                  管理 runner-style worker registration key。
                 </div>
               </div>
             </div>
@@ -80,7 +80,7 @@ export function SettingsPage({
               className="w-full justify-start"
             >
               <Fingerprint size={18} className="text-cyan-400" />
-              配对 Worker Device
+              Worker Runner Auth
             </Button>
 
             <Button

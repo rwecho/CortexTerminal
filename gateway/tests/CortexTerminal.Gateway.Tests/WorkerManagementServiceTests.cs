@@ -113,6 +113,31 @@ public sealed class WorkerManagementServiceTests
         Assert.Null(worker.CurrentConnectionId);
     }
 
+    [Fact]
+    public async Task UpsertAsync_PreservesAvailablePathTrailingWhitespace()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new WorkerManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        var pathWithTrailingSpace = "/Volumes/MacMiniDisk/workspace/CortexTerminal ";
+
+        var worker = await service.UpsertAsync(
+            new CortexTerminal.Gateway.Contracts.Workers.UpsertWorkerRequest(
+                "worker-path",
+                "Worker Path",
+                "Claude CLI",
+                [pathWithTrailingSpace],
+                ["claude", "codex"]),
+            CancellationToken.None);
+
+        Assert.Single(worker.AvailablePaths);
+        Assert.Equal(pathWithTrailingSpace, worker.AvailablePaths[0]);
+        Assert.Equal(["claude", "codex"], worker.SupportedAgentFamilies);
+    }
+
     private static GatewayDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<GatewayDbContext>()

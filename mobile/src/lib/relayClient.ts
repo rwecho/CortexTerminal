@@ -12,6 +12,12 @@ export type FrameMetadata = {
   traceId?: string;
 };
 
+export type RelayLifecycleHandlers = {
+  onReconnecting?: (error?: Error) => void;
+  onReconnected?: (connectionId?: string) => void | Promise<void>;
+  onClose?: (error?: Error) => void;
+};
+
 export interface RelayClient {
   connect(sessionId: string, workerId: string): Promise<void>;
   sendMobileFrame(
@@ -55,6 +61,7 @@ export function createRelayClient(
   gatewayBaseUrl: string,
   onWorkerFrame: WorkerFrameHandler,
   accessTokenProvider?: AccessTokenProvider,
+  lifecycleHandlers?: RelayLifecycleHandlers,
 ): RelayClient {
   const hubUrl = `${gatewayBaseUrl.replace(/\/$/, "")}/hubs/relay`;
 
@@ -79,6 +86,18 @@ export function createRelayClient(
       });
     },
   );
+
+  connection.onreconnecting((error) => {
+    lifecycleHandlers?.onReconnecting?.(error as Error | undefined);
+  });
+
+  connection.onreconnected((connectionId) =>
+    lifecycleHandlers?.onReconnected?.(connectionId ?? undefined),
+  );
+
+  connection.onclose((error) => {
+    lifecycleHandlers?.onClose?.(error as Error | undefined);
+  });
 
   return {
     async connect(sessionId, workerId) {

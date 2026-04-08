@@ -1,6 +1,7 @@
 using System.Text;
 using CortexTerminal.Gateway.Services;
 using CortexTerminal.Gateway.Services.Audit;
+using CortexTerminal.Gateway.Services.Relay;
 using CortexTerminal.Gateway.Services.Sessions;
 using CortexTerminal.Gateway.Services.Auth;
 using CortexTerminal.Gateway.Services.Workers;
@@ -203,20 +204,8 @@ public sealed class RelayHub(
 
     private async Task WriteCommandAuditAsync(string sessionId, string workerId, string encryptedFrameBase64, string? requestId, string? traceId)
     {
-        string payloadText;
-        try
-        {
-            payloadText = Encoding.UTF8.GetString(Convert.FromBase64String(encryptedFrameBase64)).Trim();
-        }
-        catch
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(payloadText)
-            || payloadText.StartsWith("__ct_", StringComparison.Ordinal)
-            || string.Equals(payloadText, "\u001b", StringComparison.Ordinal)
-            || string.Equals(payloadText, "\n", StringComparison.Ordinal))
+        if (!RelayControlFrameAuditExtractor.TryExtractAuditedCommand(encryptedFrameBase64, out var auditedCommand)
+            || auditedCommand is null)
         {
             return;
         }
@@ -227,13 +216,20 @@ public sealed class RelayHub(
             new AuditWriteRequest(
                 "command",
                 "submitted",
-                $"会话 {sessionId} 提交命令：{payloadText}",
+                auditedCommand.AttachmentFileNames.Count == 0
+                    ? $"会话 {sessionId} 提交命令：{auditedCommand.CommandText}"
+                    : $"会话 {sessionId} 提交带附件命令：{auditedCommand.CommandText}",
                 ActorType: "user",
                 ActorId: actorId,
                 SessionId: sessionId,
                 WorkerId: workerId,
                 TraceId: traceId,
-                Payload: new { requestId, command = payloadText }),
+                Payload: new
+                {
+                    requestId,
+                    command = auditedCommand.CommandText,
+                    attachments = auditedCommand.AttachmentFileNames
+                }),
             Context.ConnectionAborted);
     }
 }

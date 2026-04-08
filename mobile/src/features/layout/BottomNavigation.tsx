@@ -23,7 +23,7 @@ function isTabActive(activeView: View, tabId: View): boolean {
     return true;
   }
 
-  if (tabId === "settings" && activeView === "pairWorker") {
+  if (tabId === "settings" && activeView === "workerAuth") {
     return true;
   }
 

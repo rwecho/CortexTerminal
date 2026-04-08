@@ -11,11 +11,11 @@ import { useManagementClient } from "../../app/hooks/useManagementClient";
 import { useSessionsStore } from "../store/useSessionsStore";
 import { useTerminalStore } from "../../terminal/store/useTerminalStore";
 import {
-  agentOptions,
+  allAgentFamilies,
   buildSessionBootLogs,
   createTraceId,
+  getWorkerSupportedAgentFamilies,
   getPathLabel,
-  inferAgentFamily,
 } from "../../app/appUtils";
 import { buildSessionAccessError } from "../../terminal/terminalUtils";
 
@@ -38,19 +38,19 @@ export function useNewSessionDraftSync() {
     (state) => state.setNewSessionPath,
   );
 
-  const availableAgentFamilies = useMemo(
-    () => agentOptions.map((option) => option.id),
-    [],
-  );
+  const availableAgentFamilies = useMemo(() => {
+    const selectedWorker = workers.find(
+      (worker) => worker.workerId === newSessionWorkerId && worker.isOnline,
+    );
+
+    return selectedWorker
+      ? getWorkerSupportedAgentFamilies(selectedWorker)
+      : [...allAgentFamilies];
+  }, [newSessionWorkerId, workers]);
 
   const filteredNewSessionWorkers = useMemo(
-    () =>
-      workers.filter(
-        (worker) =>
-          inferAgentFamily(worker.modelName) === newSessionAgentFamily &&
-          worker.isOnline,
-      ),
-    [newSessionAgentFamily, workers],
+    () => workers.filter((worker) => worker.isOnline),
+    [workers],
   );
 
   const selectedNewSessionWorker = useMemo(
@@ -123,7 +123,6 @@ function prepareTerminalSession(
 
 export function useOpenSessionAction() {
   const navigate = useNavigate();
-  const workers = useSessionsStore((state) => state.workers);
   const setManagementError = useSessionsStore(
     (state) => state.setManagementError,
   );
@@ -133,6 +132,7 @@ export function useOpenSessionAction() {
 
   return useCallback(
     (session: GatewaySession) => {
+      const workers = useSessionsStore.getState().workers;
       const worker =
         workers.find((candidate) => candidate.workerId === session.workerId) ??
         null;
@@ -145,7 +145,7 @@ export function useOpenSessionAction() {
 
       prepareTerminalSession(session, worker, navigate);
     },
-    [navigate, setActiveSessionId, setManagementError, workers],
+    [navigate, setActiveSessionId, setManagementError],
   );
 }
 
@@ -177,6 +177,7 @@ export function useSessionActions() {
   const setIsDeletingWorkerId = useSessionsStore(
     (state) => state.setIsDeletingWorkerId,
   );
+  const setOverviewData = useSessionsStore((state) => state.setOverviewData);
   const activeSessionId = useTerminalStore((state) => state.activeSessionId);
 
   const handleCreateSession = useCallback(async () => {
@@ -197,12 +198,24 @@ export function useSessionActions() {
         workerId: newSessionWorkerId,
         workingDirectory: newSessionPath,
         displayName,
+        agentFamily: newSessionAgentFamily,
         traceId,
       });
 
-      await loadManagementData();
+      const currentState = useSessionsStore.getState();
+      const nextSessions = currentState.sessions.some(
+        (candidate) => candidate.sessionId === session.sessionId,
+      )
+        ? currentState.sessions
+        : [...currentState.sessions, session];
+
+      setOverviewData(currentState.workers, nextSessions);
       setNewSessionDisplayName("");
       openSession(session);
+      await loadManagementData({
+        showLoading: false,
+        preserveError: true,
+      });
     } catch (error) {
       const message = (error as Error).message;
       if (!handleAuthFailure(message)) {
@@ -216,9 +229,11 @@ export function useSessionActions() {
     loadManagementData,
     managementClient,
     newSessionDisplayName,
+    newSessionAgentFamily,
     newSessionPath,
     newSessionWorkerId,
     openSession,
+    setOverviewData,
     setIsCreatingSession,
     setManagementError,
     setNewSessionDisplayName,
@@ -226,17 +241,29 @@ export function useSessionActions() {
 
   const handleDeleteSession = useCallback(
     async (session: GatewaySession) => {
+      const currentState = useSessionsStore.getState();
+      const previousWorkers = currentState.workers;
+      const previousSessions = currentState.sessions;
+      const nextSessions = previousSessions.filter(
+        (candidate) => candidate.sessionId !== session.sessionId,
+      );
+
       try {
         setIsDeletingSessionId(session.sessionId);
         setManagementError(null);
+        setOverviewData(previousWorkers, nextSessions);
 
         if (session.sessionId === activeSessionId) {
           navigate(buildAppPath("home"));
         }
 
         await managementClient.closeSession(session.sessionId);
-        await loadManagementData();
+        await loadManagementData({
+          showLoading: false,
+          preserveError: true,
+        });
       } catch (error) {
+        setOverviewData(previousWorkers, previousSessions);
         const message = (error as Error).message;
         if (!handleAuthFailure(message)) {
           setManagementError(message);
@@ -252,18 +279,34 @@ export function useSessionActions() {
       managementClient,
       navigate,
       setIsDeletingSessionId,
+      setOverviewData,
       setManagementError,
     ],
   );
 
   const handleDeleteWorker = useCallback(
     async (worker: GatewayWorker) => {
+      const currentState = useSessionsStore.getState();
+      const previousWorkers = currentState.workers;
+      const previousSessions = currentState.sessions;
+      const nextWorkers = previousWorkers.filter(
+        (candidate) => candidate.workerId !== worker.workerId,
+      );
+      const nextSessions = previousSessions.filter(
+        (session) => session.workerId !== worker.workerId,
+      );
+
       try {
         setIsDeletingWorkerId(worker.workerId);
         setManagementError(null);
+        setOverviewData(nextWorkers, nextSessions);
         await managementClient.deleteWorker(worker.workerId);
-        await loadManagementData();
+        await loadManagementData({
+          showLoading: false,
+          preserveError: true,
+        });
       } catch (error) {
+        setOverviewData(previousWorkers, previousSessions);
         const message = (error as Error).message;
         if (!handleAuthFailure(message)) {
           setManagementError(message);
@@ -277,6 +320,7 @@ export function useSessionActions() {
       loadManagementData,
       managementClient,
       setIsDeletingWorkerId,
+      setOverviewData,
       setManagementError,
     ],
   );

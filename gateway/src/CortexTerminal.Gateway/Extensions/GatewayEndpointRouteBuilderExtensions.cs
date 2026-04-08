@@ -7,6 +7,7 @@ using CortexTerminal.Gateway.Services.Auth;
 using CortexTerminal.Gateway.Services.Sessions;
 using CortexTerminal.Gateway.Services.Users;
 using CortexTerminal.Gateway.Services.Workers;
+using OpenIddict.Abstractions;
 
 namespace CortexTerminal.Gateway.Extensions;
 
@@ -125,11 +126,29 @@ public static class GatewayEndpointRouteBuilderExtensions
             var session = await sessionManagementService.BindSessionAsync(sessionId, request, cancellationToken);
             return session is null ? Results.NotFound() : Results.Ok(session);
         });
-        sessions.MapPost("/{sessionId}/close", async (string sessionId, ISessionManagementService sessionManagementService, CancellationToken cancellationToken) =>
+        endpoints.MapPost("/api/sessions/{sessionId}/close", async (string sessionId, ClaimsPrincipal principal, ISessionManagementService sessionManagementService, CancellationToken cancellationToken) =>
         {
-            var session = await sessionManagementService.CloseAsync(sessionId, cancellationToken);
+            var existingSession = await sessionManagementService.GetAsync(sessionId, cancellationToken);
+            if (existingSession is null)
+            {
+                return Results.NotFound();
+            }
+
+            var workerId = principal.FindFirst(GatewayClaimTypes.WorkerId)?.Value;
+            if (!string.IsNullOrWhiteSpace(workerId)
+                && !string.Equals(existingSession.WorkerId, workerId, StringComparison.Ordinal))
+            {
+                return Results.Forbid();
+            }
+
+            var actorType = string.IsNullOrWhiteSpace(workerId) ? "user" : "worker";
+            var actorId = string.IsNullOrWhiteSpace(workerId)
+                ? principal.FindFirst(OpenIddictConstants.Claims.Subject)?.Value
+                : workerId;
+
+            var session = await sessionManagementService.CloseAsync(sessionId, actorType, actorId, cancellationToken);
             return session is null ? Results.NotFound() : Results.Ok(session);
-        });
+        }).WithTags("Gateway Sessions").RequireAuthorization("GatewayUserOrWorkerNode");
 
         return endpoints;
     }

@@ -1,6 +1,7 @@
 # .NET
 **/bin/
 **/obj/
+*.csproj.lscache
 
 # Node
 **/node_modules/

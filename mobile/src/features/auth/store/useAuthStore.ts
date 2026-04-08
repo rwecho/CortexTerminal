@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { GatewayPrincipal } from "../../../lib/gatewayAuthClient";
+import { gatewayTokenStorageKey } from "../../app/config";
 
 type AuthMode = "login" | "register";
 
@@ -31,6 +32,19 @@ type AuthStore = {
   clearAuthentication: () => void;
 };
 
+function persistAccessToken(accessToken: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (accessToken) {
+    window.localStorage.setItem(gatewayTokenStorageKey, accessToken);
+    return;
+  }
+
+  window.localStorage.removeItem(gatewayTokenStorageKey);
+}
+
 export const useAuthStore = create<AuthStore>((set) => ({
   accessToken: null,
   currentPrincipal: null,
@@ -42,7 +56,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
   authEmail: "",
   authError: null,
   isAuthenticating: false,
-  setAccessToken: (accessToken) => set({ accessToken }),
+  setAccessToken: (accessToken) => {
+    persistAccessToken(accessToken);
+    set({ accessToken });
+  },
   setCurrentPrincipal: (currentPrincipal) => set({ currentPrincipal }),
   setIsAuthBootstrapping: (isAuthBootstrapping) => set({ isAuthBootstrapping }),
   setAuthMode: (authMode) => set({ authMode }),
@@ -52,19 +69,23 @@ export const useAuthStore = create<AuthStore>((set) => ({
   setAuthEmail: (authEmail) => set({ authEmail }),
   setAuthError: (authError) => set({ authError }),
   setIsAuthenticating: (isAuthenticating) => set({ isAuthenticating }),
-  applyAuthentication: (accessToken, currentPrincipal) =>
+  applyAuthentication: (accessToken, currentPrincipal) => {
+    persistAccessToken(accessToken);
     set({
       accessToken,
       currentPrincipal,
       authError: null,
-    }),
-  clearAuthentication: () =>
+    });
+  },
+  clearAuthentication: () => {
+    persistAccessToken(null);
     set({
       accessToken: null,
       currentPrincipal: null,
       authError: null,
       isAuthenticating: false,
-    }),
+    });
+  },
 }));
 
 export const selectIsAppLoggedIn = (state: AuthStore) =>

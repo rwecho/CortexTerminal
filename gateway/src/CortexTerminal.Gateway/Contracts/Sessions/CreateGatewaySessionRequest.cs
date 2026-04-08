@@ -5,5 +5,6 @@ public sealed record CreateGatewaySessionRequest(
     Guid? UserId,
     string? WorkerId,
     string? DisplayName,
+    string? AgentFamily,
     string? WorkingDirectory,
     string? TraceId);

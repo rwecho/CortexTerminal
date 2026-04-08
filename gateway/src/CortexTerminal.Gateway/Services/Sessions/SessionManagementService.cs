@@ -64,11 +64,17 @@ public sealed class SessionManagementService(
             {
                 throw new InvalidOperationException($"Worker '{normalizedWorkerId}' 当前离线，无法创建会话。请先恢复节点连接。\nWorker '{normalizedWorkerId}' is offline and cannot accept new sessions.");
             }
+
+            var worker = await dbContext.Workers.FirstAsync(candidate => candidate.WorkerId == normalizedWorkerId, cancellationToken);
+            var normalizedAgentFamily = WorkerAgentFamilySupport.NormalizeAgentFamily(request.AgentFamily)
+                ?? WorkerAgentFamilySupport.GetDefaultAgentFamily(worker.ModelName);
+
+            request = request with { AgentFamily = normalizedAgentFamily };
         }
 
         var normalizedWorkingDirectory = string.IsNullOrWhiteSpace(request.WorkingDirectory)
             ? null
-            : request.WorkingDirectory.Trim();
+            : request.WorkingDirectory;
 
         if (string.IsNullOrWhiteSpace(normalizedWorkingDirectory))
         {
@@ -91,6 +97,7 @@ public sealed class SessionManagementService(
             UserId = request.UserId,
             WorkerId = string.IsNullOrWhiteSpace(request.WorkerId) ? null : request.WorkerId.Trim(),
             DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? sessionId : request.DisplayName.Trim(),
+            AgentFamily = string.IsNullOrWhiteSpace(request.AgentFamily) ? null : request.AgentFamily.Trim(),
             WorkingDirectory = normalizedWorkingDirectory,
             TraceId = string.IsNullOrWhiteSpace(request.TraceId) ? null : request.TraceId.Trim(),
             State = SessionLifecycleState.Created,
@@ -111,7 +118,7 @@ public sealed class SessionManagementService(
                 SessionId: session.SessionId,
                 WorkerId: session.WorkerId,
                 TraceId: session.TraceId,
-                Payload: new { session.WorkingDirectory, session.State }),
+                Payload: new { session.WorkingDirectory, session.AgentFamily, session.State }),
             cancellationToken);
         await managementEventPublisher.PublishSessionsChangedAsync();
 
@@ -264,7 +271,7 @@ public sealed class SessionManagementService(
         await managementEventPublisher.PublishSessionsChangedAsync();
     }
 
-    public async Task<GatewaySessionResponse?> CloseAsync(string sessionId, CancellationToken cancellationToken)
+    public async Task<GatewaySessionResponse?> CloseAsync(string sessionId, string actorType, string? actorId, CancellationToken cancellationToken)
     {
         var session = await dbContext.Sessions.FirstOrDefaultAsync(candidate => candidate.SessionId == sessionId, cancellationToken);
         if (session is null)
@@ -283,7 +290,8 @@ public sealed class SessionManagementService(
                 "session",
                 "closed",
                 $"会话 {session.DisplayName ?? session.SessionId} 已关闭。",
-                ActorType: "user",
+                ActorType: actorType,
+                ActorId: actorId,
                 SessionId: session.SessionId,
                 WorkerId: session.WorkerId,
                 TraceId: session.TraceId),

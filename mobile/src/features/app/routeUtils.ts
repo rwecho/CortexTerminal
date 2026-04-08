@@ -10,8 +10,8 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return { view: "audit", sessionId: null };
   }
 
-  if (pathname.startsWith("/settings/pair-worker")) {
-    return { view: "pairWorker", sessionId: null };
+  if (pathname.startsWith("/settings/worker-auth")) {
+    return { view: "workerAuth", sessionId: null };
   }
 
   if (pathname.startsWith("/settings")) {
@@ -43,8 +43,8 @@ export function buildAppPath(view: View, sessionId?: string | null): string {
       return "/audit";
     case "settings":
       return "/settings";
-    case "pairWorker":
-      return "/settings/pair-worker";
+    case "workerAuth":
+      return "/settings/worker-auth";
     default:
       return "/";
   }

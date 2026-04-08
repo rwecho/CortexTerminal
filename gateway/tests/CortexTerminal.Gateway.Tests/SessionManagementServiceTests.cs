@@ -75,11 +75,87 @@ public sealed class SessionManagementServiceTests
                     null,
                     "worker-offline",
                     "Offline Session",
+                    "claude",
                     "/workspace/offline",
                     null),
                 CancellationToken.None));
 
         Assert.Contains("offline", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithUndetectedAgentFamily_StillAllowsSessionCreation()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new SessionManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-online",
+            DisplayName = "Worker Online",
+            ModelName = "Claude CLI",
+            SupportedAgentFamiliesJson = "[\"claude\",\"opencode\"]",
+            State = WorkerLifecycleState.Online,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-3),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-3)
+        });
+        await dbContext.SaveChangesAsync();
+        await presenceStore.MarkWorkerOnlineAsync("worker-online", "conn-1", CancellationToken.None);
+
+        var session = await service.CreateAsync(
+            new CreateGatewaySessionRequest(
+                null,
+                null,
+                "worker-online",
+                "Codex Session",
+                "codex",
+                "/workspace/runtime",
+                null),
+            CancellationToken.None);
+
+        Assert.Equal("codex", session.AgentFamily);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithSupportedAgentFamily_PersistsSelectedRuntime()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new SessionManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-online",
+            DisplayName = "Worker Online",
+            ModelName = "Claude CLI",
+            SupportedAgentFamiliesJson = "[\"claude\",\"codex\"]",
+            State = WorkerLifecycleState.Online,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-3),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-3)
+        });
+        await dbContext.SaveChangesAsync();
+        await presenceStore.MarkWorkerOnlineAsync("worker-online", "conn-1", CancellationToken.None);
+
+        var session = await service.CreateAsync(
+            new CreateGatewaySessionRequest(
+                null,
+                null,
+                "worker-online",
+                "Codex Session",
+                "codex",
+                "/workspace/runtime",
+                "trace-123"),
+            CancellationToken.None);
+
+        Assert.Equal("codex", session.AgentFamily);
+
+        var storedSession = await dbContext.Sessions.SingleAsync(candidate => candidate.SessionId == session.SessionId);
+        Assert.Equal("codex", storedSession.AgentFamily);
     }
 
     private static GatewayDbContext CreateDbContext()

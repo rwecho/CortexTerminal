@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using CortexTerminal.Gateway.Contracts.Auth;
 using CortexTerminal.Gateway.Contracts.Users;
-using CortexTerminal.Gateway.Models.Auth;
 using CortexTerminal.Gateway.Models.Users;
 using CortexTerminal.Gateway.Services.Auth;
 using Microsoft.AspNetCore;
@@ -76,7 +75,37 @@ public static class GatewayAuthEndpointRouteBuilderExtensions
                 principal.GetClaim(Claims.ClientId)));
         }).RequireAuthorization();
 
-        endpoints.MapPost("/connect/token", async Task<IResult> (HttpContext httpContext, UserManager<GatewayUser> userManager, IWorkerDeviceAuthorizationService workerDeviceAuthorizationService) =>
+        auth.MapPost("/worker/key", async (
+            ClaimsPrincipal principal,
+            UserManager<GatewayUser> userManager,
+            IWorkerRegistrationKeyService workerRegistrationKeyService,
+            CancellationToken cancellationToken) =>
+        {
+            var subject = principal.GetClaim(Claims.Subject);
+            if (!Guid.TryParse(subject, out var userId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var user = await userManager.FindByIdAsync(userId.ToString());
+            if (user is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var result = await workerRegistrationKeyService.IssueAsync(user, cancellationToken);
+            return Results.Ok(new WorkerRegistrationKeyResponse(
+                result.RegistrationKey,
+                result.User.Id.ToString(),
+                result.User.UserName,
+                string.IsNullOrWhiteSpace(result.User.DisplayName) ? result.User.UserName ?? result.User.Id.ToString() : result.User.DisplayName,
+                result.IssuedAtUtc));
+        }).RequireAuthorization("GatewayUser");
+
+        endpoints.MapPost("/connect/token", async Task<IResult> (
+            HttpContext httpContext,
+            UserManager<GatewayUser> userManager,
+            IWorkerRegistrationKeyService workerRegistrationKeyService) =>
         {
             var request = httpContext.GetOpenIddictServerRequest();
             if (request is null)
@@ -116,39 +145,33 @@ public static class GatewayAuthEndpointRouteBuilderExtensions
                 return Results.SignIn(principal, authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
             }
 
-            if (string.Equals(request.GrantType, "urn:cortex:grant-type:worker_device_code", StringComparison.Ordinal))
+            if (string.Equals(request.GrantType, "urn:cortex:grant-type:worker_registration_key", StringComparison.Ordinal))
             {
-                var deviceCode = request.GetParameter("device_code")?.ToString();
-                if (string.IsNullOrWhiteSpace(deviceCode))
+                var registrationKey = request.GetParameter("worker_key")?.ToString();
+                var workerId = request.GetParameter("worker_id")?.ToString()?.Trim();
+                var displayName = request.GetParameter("display_name")?.ToString()?.Trim();
+
+                if (string.IsNullOrWhiteSpace(registrationKey)
+                    || string.IsNullOrWhiteSpace(workerId))
                 {
-                    return Results.BadRequest(new { error = Errors.InvalidRequest, error_description = "device_code is required." });
+                    return Results.BadRequest(new
+                    {
+                        error = Errors.InvalidRequest,
+                        error_description = "worker_key and worker_id are required."
+                    });
                 }
 
-                var authorization = await workerDeviceAuthorizationService.RedeemApprovedChallengeAsync(deviceCode, httpContext.RequestAborted);
-                if (authorization is null)
+                var validatedKey = await workerRegistrationKeyService.ValidateAsync(registrationKey, httpContext.RequestAborted);
+                if (validatedKey is null)
                 {
-                    return CreateForbidResult("invalid_device_code", "The provided device code is invalid.");
-                }
-
-                if (authorization.Status == WorkerDeviceAuthorizationStatus.Pending)
-                {
-                    return CreateForbidResult("authorization_pending", "The worker device pairing request is still pending approval.");
-                }
-
-                if (authorization.Status == WorkerDeviceAuthorizationStatus.Expired)
-                {
-                    return CreateForbidResult("expired_token", "The worker device pairing request has expired.");
-                }
-
-                if (authorization.Status != WorkerDeviceAuthorizationStatus.Redeemed)
-                {
-                    return CreateForbidResult(Errors.InvalidGrant, "The worker device pairing request could not be redeemed.");
+                    return CreateForbidResult(Errors.InvalidGrant, "The worker registration key is invalid or expired.");
                 }
 
                 var principal = CreateWorkerPrincipal(
-                    authorization.WorkerId,
-                    authorization.RequestedScopes.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-                    authorization.WorkerDisplayName);
+                    workerId,
+                    request.GetScopes(),
+                    string.IsNullOrWhiteSpace(displayName) ? null : displayName,
+                    validatedKey.User);
 
                 return Results.SignIn(principal, authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
             }
@@ -191,13 +214,26 @@ public static class GatewayAuthEndpointRouteBuilderExtensions
         return principal;
     }
 
-    private static ClaimsPrincipal CreateWorkerPrincipal(string workerId, IEnumerable<string> requestedScopes, string? displayName = null)
+    private static ClaimsPrincipal CreateWorkerPrincipal(
+        string workerId,
+        IEnumerable<string> requestedScopes,
+        string? displayName = null,
+        GatewayUser? ownerUser = null)
     {
         var identity = new ClaimsIdentity("Token", Claims.Name, Claims.Role);
         identity.SetClaim(Claims.Subject, workerId);
         identity.SetClaim(GatewayClaimTypes.WorkerId, workerId);
         identity.SetClaim(Claims.ClientId, workerId);
         identity.SetClaim(Claims.Name, string.IsNullOrWhiteSpace(displayName) ? $"Cortex Worker {workerId}" : displayName);
+
+        if (ownerUser is not null)
+        {
+            identity.SetClaim(GatewayClaimTypes.WorkerOwnerUserId, ownerUser.Id.ToString());
+            if (!string.IsNullOrWhiteSpace(ownerUser.UserName))
+            {
+                identity.SetClaim(GatewayClaimTypes.WorkerOwnerUsername, ownerUser.UserName);
+            }
+        }
 
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(FilterScopes(requestedScopes, WorkerAllowedScopes, "worker.manage"));

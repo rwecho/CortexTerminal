@@ -12,7 +12,7 @@ export function SettingsRoute() {
   return (
     <SettingsPage
       currentPrincipal={currentPrincipal}
-      onOpenPairWorker={() => navigate(buildAppPath("pairWorker"))}
+      onOpenPairWorker={() => navigate(buildAppPath("workerAuth"))}
       onOpenAudit={() => navigate(buildAppPath("audit"))}
       onSignOut={handleSignOut}
     />

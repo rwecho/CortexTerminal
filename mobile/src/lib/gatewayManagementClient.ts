@@ -5,6 +5,7 @@ export type GatewayWorker = {
   displayName: string;
   modelName?: string | null;
   availablePaths: string[];
+  supportedAgentFamilies: string[];
   lastKnownState: string;
   currentConnectionId?: string | null;
   createdAtUtc: string;
@@ -18,6 +19,7 @@ export type GatewaySession = {
   userId?: string | null;
   workerId?: string | null;
   displayName?: string | null;
+  agentFamily?: string | null;
   workingDirectory?: string | null;
   state: string;
   mobileConnectionId?: string | null;
@@ -47,6 +49,7 @@ export type CreateGatewaySessionPayload = {
   userId?: string | null;
   workerId: string;
   displayName?: string;
+  agentFamily?: string;
   workingDirectory: string;
   traceId?: string;
 };

@@ -6,32 +6,28 @@ import { buildAppPath } from "../../app/routeUtils";
 
 export function WorkerPairingRoute() {
   const navigate = useNavigate();
-  const workerPairingCode = useWorkerPairingStore(
-    (state) => state.workerPairingCode,
+  const workerRegistrationKey = useWorkerPairingStore(
+    (state) => state.workerRegistrationKey,
   );
-  const workerPairingError = useWorkerPairingStore(
-    (state) => state.workerPairingError,
+  const workerRegistrationKeyIssuedAtUtc = useWorkerPairingStore(
+    (state) => state.workerRegistrationKeyIssuedAtUtc,
   );
-  const workerPairingMessage = useWorkerPairingStore(
-    (state) => state.workerPairingMessage,
+  const workerRegistrationKeyError = useWorkerPairingStore(
+    (state) => state.workerRegistrationKeyError,
   );
-  const isApprovingWorkerPairing = useWorkerPairingStore(
-    (state) => state.isApprovingWorkerPairing,
+  const isIssuingWorkerRegistrationKey = useWorkerPairingStore(
+    (state) => state.isIssuingWorkerRegistrationKey,
   );
-  const setWorkerPairingCode = useWorkerPairingStore(
-    (state) => state.setWorkerPairingCode,
-  );
-  const { handleApproveWorkerPairing } = useWorkerPairingActions();
+  const { handleIssueWorkerRegistrationKey } = useWorkerPairingActions();
 
   return (
     <WorkerPairingPage
-      workerPairingCode={workerPairingCode}
-      workerPairingError={workerPairingError}
-      workerPairingMessage={workerPairingMessage}
-      isApprovingWorkerPairing={isApprovingWorkerPairing}
+      workerRegistrationKey={workerRegistrationKey}
+      workerRegistrationKeyIssuedAtUtc={workerRegistrationKeyIssuedAtUtc}
+      workerRegistrationKeyError={workerRegistrationKeyError}
+      isIssuingWorkerRegistrationKey={isIssuingWorkerRegistrationKey}
       onBack={() => navigate(buildAppPath("settings"))}
-      onWorkerPairingCodeChange={setWorkerPairingCode}
-      onApprove={handleApproveWorkerPairing}
+      onIssueWorkerRegistrationKey={handleIssueWorkerRegistrationKey}
     />
   );
 }

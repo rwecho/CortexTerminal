@@ -28,6 +28,10 @@ export const agentOptions: AgentOption[] = [
   },
 ];
 
+export const allAgentFamilies = agentOptions.map(
+  (option) => option.id,
+) as AgentFamily[];
+
 export const authStatus: StatusItem[] = [
   { label: "User Identity", icon: User },
   { label: "Gateway Tunnel", icon: Wifi },
@@ -75,6 +79,29 @@ export function getAgentLabel(agent: AgentFamily): string {
   return agentOptions.find((option) => option.id === agent)?.label ?? agent;
 }
 
+export function getWorkerSupportedAgentFamilies(
+  worker: GatewayWorker | null | undefined,
+): AgentFamily[] {
+  const detectedAgentFamilies = worker?.supportedAgentFamilies
+    ?.map((family) => family.trim().toLowerCase())
+    .filter((family): family is AgentFamily =>
+      allAgentFamilies.includes(family),
+    );
+
+  if (!detectedAgentFamilies || detectedAgentFamilies.length === 0) {
+    return [...allAgentFamilies];
+  }
+
+  const uniqueDetectedAgentFamilies = Array.from(
+    new Set(detectedAgentFamilies),
+  );
+  const remainingAgentFamilies = allAgentFamilies.filter(
+    (family) => !uniqueDetectedAgentFamilies.includes(family),
+  );
+
+  return [...uniqueDetectedAgentFamilies, ...remainingAgentFamilies];
+}
+
 export function buildSessionBootLogs(
   session: GatewaySession | null,
   worker: GatewayWorker | null,
@@ -83,7 +110,10 @@ export function buildSessionBootLogs(
     session?.displayName ?? session?.sessionId ?? "未命名会话";
   const workerLabel = worker?.displayName ?? session?.workerId ?? "未绑定节点";
   const workingDirectory = session?.workingDirectory ?? "/claude";
-  const agentLabel = getAgentLabel(inferAgentFamily(worker?.modelName));
+  const sessionAgentFamily = session?.agentFamily as AgentFamily | undefined;
+  const agentLabel = getAgentLabel(
+    sessionAgentFamily ?? inferAgentFamily(worker?.modelName),
+  );
 
   return [
     {

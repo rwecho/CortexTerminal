@@ -10,6 +10,11 @@ import {
 import { useSessionsStore } from "../store/useSessionsStore";
 import { useTerminalStore } from "../../terminal/store/useTerminalStore";
 
+type LoadManagementOptions = {
+  showLoading?: boolean;
+  preserveError?: boolean;
+};
+
 export function useLoadManagementData() {
   const managementClient = useManagementClient();
   const handleAuthFailure = useAuthFailureHandler();
@@ -24,49 +29,64 @@ export function useLoadManagementData() {
     (state) => state.setActiveSessionId,
   );
 
-  return useCallback(async () => {
-    setIsLoadingManagement(true);
-    setManagementError(null);
+  return useCallback(
+    async (options: LoadManagementOptions = {}) => {
+      const { showLoading = true, preserveError = false } = options;
 
-    try {
-      const [nextWorkers, nextSessions] = await Promise.all([
-        managementClient.listWorkers(),
-        managementClient.listSessions(),
-      ]);
-
-      setOverviewData(nextWorkers, nextSessions);
-      const currentActiveSessionId =
-        useTerminalStore.getState().activeSessionId;
-      const nextActiveSessionId =
-        currentActiveSessionId &&
-        nextSessions.some(
-          (session) => session.sessionId === currentActiveSessionId,
-        )
-          ? currentActiveSessionId
-          : (nextSessions[0]?.sessionId ?? null);
-
-      setActiveSessionId(nextActiveSessionId);
-    } catch (error) {
-      const message = (error as Error).message;
-      if (!handleAuthFailure(message)) {
-        setManagementError(message);
+      if (showLoading) {
+        setIsLoadingManagement(true);
       }
-    } finally {
-      setIsLoadingManagement(false);
-    }
-  }, [
-    handleAuthFailure,
-    managementClient,
-    setActiveSessionId,
-    setIsLoadingManagement,
-    setManagementError,
-    setOverviewData,
-  ]);
+
+      if (!preserveError) {
+        setManagementError(null);
+      }
+
+      try {
+        const [nextWorkers, nextSessions] = await Promise.all([
+          managementClient.listWorkers(),
+          managementClient.listSessions(),
+        ]);
+
+        setOverviewData(nextWorkers, nextSessions);
+        const currentActiveSessionId =
+          useTerminalStore.getState().activeSessionId;
+        const nextActiveSessionId =
+          currentActiveSessionId &&
+          nextSessions.some(
+            (session) => session.sessionId === currentActiveSessionId,
+          )
+            ? currentActiveSessionId
+            : (nextSessions[0]?.sessionId ?? null);
+
+        setActiveSessionId(nextActiveSessionId);
+      } catch (error) {
+        const message = (error as Error).message;
+        if (!handleAuthFailure(message)) {
+          setManagementError(message);
+        }
+      } finally {
+        if (showLoading) {
+          setIsLoadingManagement(false);
+        }
+      }
+    },
+    [
+      handleAuthFailure,
+      managementClient,
+      setActiveSessionId,
+      setIsLoadingManagement,
+      setManagementError,
+      setOverviewData,
+    ],
+  );
 }
 
 export function useSessionsOverviewSync() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const isAppLoggedIn = useAuthStore(selectIsAppLoggedIn);
+  const hasLoadedManagementSnapshot = useSessionsStore(
+    (state) => state.hasLoadedManagementSnapshot,
+  );
   const loadManagementData = useLoadManagementData();
   const setManagementError = useSessionsStore(
     (state) => state.setManagementError,
@@ -80,7 +100,10 @@ export function useSessionsOverviewSync() {
 
     refreshTimeoutRef.current = window.setTimeout(() => {
       refreshTimeoutRef.current = null;
-      void loadManagementData();
+      void loadManagementData({
+        showLoading: false,
+        preserveError: true,
+      });
     }, 150);
   }, [loadManagementData]);
 
@@ -100,8 +123,10 @@ export function useSessionsOverviewSync() {
       return;
     }
 
-    void loadManagementData();
-  }, [isAppLoggedIn, loadManagementData]);
+    void loadManagementData({
+      showLoading: !hasLoadedManagementSnapshot,
+    });
+  }, [hasLoadedManagementSnapshot, isAppLoggedIn, loadManagementData]);
 
   useEffect(() => {
     if (!isAppLoggedIn || !accessToken) {

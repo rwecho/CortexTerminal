@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="CortexTerminal.MobileShell.MainPage"
+             BackgroundColor="#050505">
+
+    <Grid>
+        <HybridWebView x:Name="hybridWebView"
+                       HybridRoot="wwwroot"
+                       DefaultFile="index.html"
+                       Loaded="OnHybridWebViewLoaded"/>
+
+        <Grid x:Name="loadingOverlay"
+              BackgroundColor="#050505"
+              Padding="24"
+              RowDefinitions="Auto,Auto,Auto"
+              RowSpacing="12">
+            <ActivityIndicator x:Name="loadingIndicator"
+                               Grid.Row="0"
+                               IsRunning="True"
+                               HeightRequest="40"
+                               WidthRequest="40"
+                               Color="#06b6d4"
+                               HorizontalOptions="Center"
+                               VerticalOptions="End"/>
+
+            <Label Grid.Row="1"
+                   Text="Cortex Terminal"
+                   TextColor="White"
+                   FontAttributes="Bold"
+                   FontSize="22"
+                   HorizontalTextAlignment="Center"/>
+
+            <Label x:Name="statusMessageLabel"
+                   Grid.Row="2"
+                   Text="正在加载 MAUI native shell 中的 React terminal..."
+                   TextColor="#9ca3af"
+                   FontSize="13"
+                   HorizontalTextAlignment="Center"/>
+        </Grid>
+    </Grid>
+
+</ContentPage>

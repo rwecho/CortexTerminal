@@ -8,31 +8,7 @@ namespace CortexTerminal.Worker.Services;
 
 public sealed class WorkerGatewayAuthClient(HttpClient httpClient, ILogger<WorkerGatewayAuthClient> logger)
 {
-    private const string DeviceCodeGrantType = "urn:cortex:grant-type:worker_device_code";
-
-    public async Task<WorkerDeviceAuthorizationChallenge> StartDeviceAuthorizationAsync(
-        string workerId,
-        string displayName,
-        CancellationToken cancellationToken)
-    {
-        using var response = await httpClient.PostAsJsonAsync(
-            "api/auth/worker/device",
-            new StartWorkerDeviceAuthorizationRequest(workerId, displayName, "relay.connect worker.manage offline_access"),
-            cancellationToken);
-
-        response.EnsureSuccessStatusCode();
-        var payload = await response.Content.ReadFromJsonAsync<WorkerDeviceAuthorizationChallenge>(cancellationToken: cancellationToken);
-        return payload ?? throw new InvalidOperationException("Gateway returned an empty worker device authorization response.");
-    }
-
-    public async Task<WorkerTokenExchangeResult> ExchangeDeviceCodeAsync(string deviceCode, CancellationToken cancellationToken)
-    {
-        return await ExchangeTokenAsync(new Dictionary<string, string>
-        {
-            ["grant_type"] = DeviceCodeGrantType,
-            ["device_code"] = deviceCode
-        }, cancellationToken);
-    }
+    private const string RegistrationKeyGrantType = "urn:cortex:grant-type:worker_registration_key";
 
     public async Task<WorkerTokenExchangeResult> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken)
     {
@@ -40,6 +16,22 @@ public sealed class WorkerGatewayAuthClient(HttpClient httpClient, ILogger<Worke
         {
             ["grant_type"] = "refresh_token",
             ["refresh_token"] = refreshToken
+        }, cancellationToken);
+    }
+
+    public async Task<WorkerTokenExchangeResult> ExchangeWorkerRegistrationKeyAsync(
+        string workerId,
+        string displayName,
+        string registrationKey,
+        CancellationToken cancellationToken)
+    {
+        return await ExchangeTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = RegistrationKeyGrantType,
+            ["worker_key"] = registrationKey,
+            ["worker_id"] = workerId,
+            ["display_name"] = displayName,
+            ["scope"] = "relay.connect worker.manage offline_access"
         }, cancellationToken);
     }
 
@@ -90,15 +82,6 @@ public sealed class WorkerGatewayAuthClient(HttpClient httpClient, ILogger<Worke
         }
     }
 
-    public sealed record WorkerDeviceAuthorizationChallenge(
-        string DeviceCode,
-        string UserCode,
-        string VerificationUri,
-        int ExpiresIn,
-        int Interval,
-        string WorkerId,
-        string DisplayName);
-
     public sealed record WorkerAccessToken(
         string AccessToken,
         string? RefreshToken,
@@ -114,8 +97,6 @@ public sealed class WorkerGatewayAuthClient(HttpClient httpClient, ILogger<Worke
 
         public static WorkerTokenExchangeResult Failure(string? error, string? errorDescription) => new(false, null, error, errorDescription);
     }
-
-    private sealed record StartWorkerDeviceAuthorizationRequest(string WorkerId, string DisplayName, string Scope);
 
     private sealed record WorkerTokenResponse(
         [property: JsonPropertyName("access_token")] string AccessToken,

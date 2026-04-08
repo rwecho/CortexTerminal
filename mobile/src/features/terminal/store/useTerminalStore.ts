@@ -2,8 +2,9 @@ import { create } from "zustand";
 import type { TerminalInteraction } from "../interactionDetector";
 import type { LogItem } from "../../app/appTypes";
 import { buildSessionBootLogs, createTraceId } from "../../app/appUtils";
+import type { PendingAttachment } from "../terminalAttachmentTypes";
+import type { TerminalConnectionState } from "../terminalRecovery";
 
-type ConnectionState = "idle" | "connecting" | "connected" | "error";
 type InputMode = "text" | "voice";
 
 type TerminalStore = {
@@ -13,8 +14,9 @@ type TerminalStore = {
   inputMode: InputMode;
   isPressing: boolean;
   traceId: string;
-  connectionState: ConnectionState;
+  connectionState: TerminalConnectionState;
   terminalLogs: LogItem[];
+  pendingAttachments: PendingAttachment[];
   terminalInteraction: TerminalInteraction | null;
   isInteractionCustomInputVisible: boolean;
   setActiveSessionId: (activeSessionId: string | null) => void;
@@ -26,9 +28,12 @@ type TerminalStore = {
   setIsPressing: (isPressing: boolean) => void;
   setTraceId: (traceId: string) => void;
   regenerateTraceId: () => string;
-  setConnectionState: (connectionState: ConnectionState) => void;
+  setConnectionState: (connectionState: TerminalConnectionState) => void;
   setTerminalLogs: (terminalLogs: LogItem[]) => void;
   appendTerminalLogs: (logs: LogItem[]) => void;
+  addPendingAttachments: (attachments: PendingAttachment[]) => void;
+  removePendingAttachment: (attachmentId: string) => void;
+  clearPendingAttachments: () => void;
   setTerminalInteraction: (
     terminalInteraction: TerminalInteraction | null,
   ) => void;
@@ -48,6 +53,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   traceId: createTraceId(),
   connectionState: "idle",
   terminalLogs: buildSessionBootLogs(null, null),
+  pendingAttachments: [],
   terminalInteraction: null,
   isInteractionCustomInputVisible: false,
   setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
@@ -71,6 +77,17 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   setTerminalLogs: (terminalLogs) => set({ terminalLogs }),
   appendTerminalLogs: (logs) =>
     set((state) => ({ terminalLogs: [...state.terminalLogs, ...logs] })),
+  addPendingAttachments: (attachments) =>
+    set((state) => ({
+      pendingAttachments: [...state.pendingAttachments, ...attachments],
+    })),
+  removePendingAttachment: (attachmentId) =>
+    set((state) => ({
+      pendingAttachments: state.pendingAttachments.filter(
+        (attachment) => attachment.id !== attachmentId,
+      ),
+    })),
+  clearPendingAttachments: () => set({ pendingAttachments: [] }),
   setTerminalInteraction: (terminalInteraction) => set({ terminalInteraction }),
   setIsInteractionCustomInputVisible: (isInteractionCustomInputVisible) =>
     set({ isInteractionCustomInputVisible }),
@@ -89,6 +106,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       traceId: createTraceId(),
       connectionState: "idle",
       terminalLogs: buildSessionBootLogs(null, null),
+      pendingAttachments: [],
       terminalInteraction: null,
       isInteractionCustomInputVisible: false,
     }),

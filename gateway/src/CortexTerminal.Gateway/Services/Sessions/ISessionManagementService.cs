@@ -18,5 +18,5 @@ public interface ISessionManagementService
 
     Task MarkDisconnectedByConnectionAsync(string connectionId, CancellationToken cancellationToken);
 
-    Task<GatewaySessionResponse?> CloseAsync(string sessionId, CancellationToken cancellationToken);
+    Task<GatewaySessionResponse?> CloseAsync(string sessionId, string actorType, string? actorId, CancellationToken cancellationToken);
 }

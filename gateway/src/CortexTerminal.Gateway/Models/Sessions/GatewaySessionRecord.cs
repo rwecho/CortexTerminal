@@ -10,6 +10,8 @@ public sealed class GatewaySessionRecord
 
     public string? DisplayName { get; set; }
 
+    public string? AgentFamily { get; set; }
+
     public string? WorkingDirectory { get; set; }
 
     public SessionLifecycleState State { get; set; } = SessionLifecycleState.Created;

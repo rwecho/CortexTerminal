@@ -115,6 +115,7 @@ public sealed class WorkerManagementService(
         worker.DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? workerId : request.DisplayName.Trim();
         worker.ModelName = string.IsNullOrWhiteSpace(request.ModelName) ? worker.ModelName : request.ModelName.Trim();
         worker.AvailablePathsJson = SerializePaths(request.AvailablePaths);
+        worker.SupportedAgentFamiliesJson = WorkerAgentFamilySupport.SerializeSupportedAgentFamilies(request.SupportedAgentFamilies, worker.ModelName);
         worker.UpdatedAtUtc = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -126,7 +127,12 @@ public sealed class WorkerManagementService(
                 ActorType: "worker",
                 ActorId: worker.WorkerId,
                 WorkerId: worker.WorkerId,
-                Payload: new { worker.ModelName, request.AvailablePaths }),
+                Payload: new
+                {
+                    worker.ModelName,
+                    request.AvailablePaths,
+                    supportedAgentFamilies = WorkerAgentFamilySupport.DeserializeSupportedAgentFamilies(worker.SupportedAgentFamiliesJson, worker.ModelName)
+                }),
             cancellationToken);
         await managementEventPublisher.PublishWorkersChangedAsync();
 
@@ -237,7 +243,6 @@ public sealed class WorkerManagementService(
     {
         var normalizedPaths = availablePaths?
             .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Select(path => path.Trim())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 

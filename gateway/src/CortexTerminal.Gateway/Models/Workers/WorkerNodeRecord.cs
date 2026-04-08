@@ -10,6 +10,8 @@ public sealed class WorkerNodeRecord
 
     public string? AvailablePathsJson { get; set; }
 
+    public string? SupportedAgentFamiliesJson { get; set; }
+
     public WorkerLifecycleState State { get; set; } = WorkerLifecycleState.Unknown;
 
     public string? CurrentConnectionId { get; set; }

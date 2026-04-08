@@ -37,7 +37,10 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
+});
 builder.Services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
 builder.Services.AddGatewayManagementInfrastructure(builder.Configuration);
 builder.Services.AddGatewayAuthentication(builder.Configuration);
@@ -59,7 +62,6 @@ app.MapGet("/health", () => Results.Ok(new
     management = "/api"
 }));
 app.MapGatewayAuthEndpoints();
-app.MapGatewayWorkerDeviceAuthEndpoints();
 app.MapGatewayManagementEndpoints();
 app.MapHub<ManagementHub>("/hubs/management").RequireAuthorization("GatewayUser");
 app.MapHub<RelayHub>("/hubs/relay").RequireAuthorization();

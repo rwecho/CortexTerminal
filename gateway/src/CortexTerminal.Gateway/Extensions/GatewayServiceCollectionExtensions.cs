@@ -6,6 +6,7 @@ using CortexTerminal.Gateway.Services.Auth;
 using CortexTerminal.Gateway.Services.Sessions;
 using CortexTerminal.Gateway.Services.Users;
 using CortexTerminal.Gateway.Services.Workers;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using StackExchange.Redis;
@@ -40,9 +41,10 @@ public static class GatewayServiceCollectionExtensions
             options.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
         });
 
+        services.AddDataProtection();
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
         services.AddScoped<IAuditTrailService, DatabaseAuditTrailService>();
-        services.AddScoped<IWorkerDeviceAuthorizationService, WorkerDeviceAuthorizationService>();
+        services.AddScoped<IWorkerRegistrationKeyService, WorkerRegistrationKeyService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<ISessionManagementService, SessionManagementService>();
         services.AddScoped<IWorkerManagementService, WorkerManagementService>();

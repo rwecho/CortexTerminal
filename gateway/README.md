@@ -43,3 +43,19 @@
   - `GATEWAY_REDIS_CONNECTION_STRING`
 - Run tests:
   - `dotnet test gateway/tests/CortexTerminal.Gateway.Tests/CortexTerminal.Gateway.Tests.csproj`
+
+## Docker 发布 Docker publishing
+
+- GitHub Actions:
+  - `.github/workflows/gateway-docker-publish.yml`
+- 发布目标：
+  - `ghcr.io/<owner>/cortex-terminal-gateway`
+- 默认触发：
+  - `main` 分支 gateway 相关改动
+  - `v*` tag
+  - 手动 `workflow_dispatch`
+- 标签策略：
+  - branch
+  - git tag
+  - commit sha
+  - default branch 上的 `latest`

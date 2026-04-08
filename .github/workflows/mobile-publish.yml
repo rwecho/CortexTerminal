@@ -1,0 +1,288 @@
+name: Publish Mobile Shell
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Optional semver version (example: 1.2.3). Defaults to tag name or 0.1.0."
+        required: false
+        type: string
+      build_android:
+        description: "Build Android package"
+        required: true
+        default: true
+        type: boolean
+      build_maccatalyst:
+        description: "Build Mac Catalyst shell"
+        required: true
+        default: true
+        type: boolean
+      build_ios:
+        description: "Build signed iOS IPA (requires Apple signing secrets)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  MOBILE_WEB_DIR: mobile
+  MAUI_PROJECT: mobile/maui/CortexTerminal.MobileShell/CortexTerminal.MobileShell.csproj
+  MAUI_WEBROOT: mobile/maui/CortexTerminal.MobileShell/Resources/Raw/wwwroot
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    outputs:
+      build_version: ${{ steps.version.outputs.build_version }}
+      display_version: ${{ steps.version.outputs.display_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          raw_version="${{ github.event.inputs.release_version || '' }}"
+          if [[ -z "$raw_version" ]]; then
+            raw_version="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ -z "$raw_version" || "$raw_version" == "$GITHUB_REF_NAME" ]]; then
+            raw_version="0.1.0"
+          fi
+
+          display_version="${raw_version#v}"
+          IFS='.' read -r major minor patch <<< "$display_version"
+          major=${major:-0}
+          minor=${minor:-0}
+          patch=${patch:-0}
+          build_version="$(printf '%d%03d%03d' "$major" "$minor" "$patch")${GITHUB_RUN_NUMBER}"
+
+          echo "display_version=$display_version" >> "$GITHUB_OUTPUT"
+          echo "build_version=$build_version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Build mobile web bundle
+        working-directory: mobile
+        run: npm run build
+
+      - name: Upload mobile web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-terminal-mobile-web
+          path: mobile/dist
+          if-no-files-found: error
+
+  build-maccatalyst:
+    if: ${{ github.event_name == 'push' || inputs.build_maccatalyst }}
+    runs-on: macos-latest
+    needs: build-web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workloads
+        run: dotnet workload install maui maccatalyst
+
+      - name: Reset packaged web root
+        run: |
+          rm -rf "${{ env.MAUI_WEBROOT }}"
+          mkdir -p "${{ env.MAUI_WEBROOT }}"
+
+      - name: Download mobile web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cortex-terminal-mobile-web
+          path: ${{ env.MAUI_WEBROOT }}
+
+      - name: Restore MAUI project
+        run: dotnet restore "${{ env.MAUI_PROJECT }}"
+
+      - name: Publish Mac Catalyst shell
+        run: |
+          dotnet publish "${{ env.MAUI_PROJECT }}" -c Release -f net10.0-maccatalyst \
+            -p:ApplicationVersion=${{ needs.build-web.outputs.build_version }} \
+            -p:ApplicationDisplayVersion=${{ needs.build-web.outputs.display_version }}
+
+      - name: Upload Mac Catalyst artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-terminal-maccatalyst-${{ needs.build-web.outputs.display_version }}
+          path: mobile/maui/CortexTerminal.MobileShell/bin/Release/net10.0-maccatalyst/**
+          if-no-files-found: warn
+
+  build-android:
+    if: ${{ github.event_name == 'push' || inputs.build_android }}
+    runs-on: macos-latest
+    needs: build-web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workloads
+        run: dotnet workload install maui android
+
+      - name: Reset packaged web root
+        run: |
+          rm -rf "${{ env.MAUI_WEBROOT }}"
+          mkdir -p "${{ env.MAUI_WEBROOT }}"
+
+      - name: Download mobile web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cortex-terminal-mobile-web
+          path: ${{ env.MAUI_WEBROOT }}
+
+      - name: Restore MAUI project
+        run: dotnet restore "${{ env.MAUI_PROJECT }}"
+
+      - name: Publish Android shell
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          signing_args=()
+
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$ANDROID_KEYSTORE_PASSWORD" && -n "$ANDROID_KEY_PASSWORD" ]]; then
+            keystore_path="mobile/maui/CortexTerminal.MobileShell/cortex-terminal.keystore"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+            signing_args+=("-p:AndroidKeyStore=true")
+            signing_args+=("-p:AndroidSigningKeyStore=$keystore_path")
+            signing_args+=("-p:AndroidSigningKeyAlias=${ANDROID_KEY_ALIAS:-cortex_terminal}")
+            signing_args+=("-p:AndroidSigningStorePass=$ANDROID_KEYSTORE_PASSWORD")
+            signing_args+=("-p:AndroidSigningKeyPass=$ANDROID_KEY_PASSWORD")
+          else
+            echo "Android signing secrets are not configured. Publishing unsigned artifact."
+          fi
+
+          dotnet publish "${{ env.MAUI_PROJECT }}" -c Release -f net10.0-android \
+            -p:AndroidPackageFormat=aab \
+            -p:ApplicationVersion=${{ needs.build-web.outputs.build_version }} \
+            -p:ApplicationDisplayVersion=${{ needs.build-web.outputs.display_version }} \
+            "${signing_args[@]}"
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-terminal-android-${{ needs.build-web.outputs.display_version }}
+          path: |
+            mobile/maui/CortexTerminal.MobileShell/bin/Release/net10.0-android/**/*.aab
+            mobile/maui/CortexTerminal.MobileShell/bin/Release/net10.0-android/**/*.apk
+          if-no-files-found: warn
+
+  build-ios:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_ios }}
+    runs-on: macos-latest
+    needs: build-web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI workloads
+        run: dotnet workload install maui ios
+
+      - name: Reset packaged web root
+        run: |
+          rm -rf "${{ env.MAUI_WEBROOT }}"
+          mkdir -p "${{ env.MAUI_WEBROOT }}"
+
+      - name: Download mobile web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cortex-terminal-mobile-web
+          path: ${{ env.MAUI_WEBROOT }}
+
+      - name: Restore MAUI project
+        run: dotnet restore "${{ env.MAUI_PROJECT }}"
+
+      - name: Validate Apple signing secrets
+        shell: bash
+        env:
+          APPLE_CERTIFICATES_P12_BASE64: ${{ secrets.APPLE_CERTIFICATES_P12_BASE64 }}
+          APPLE_CERTIFICATES_P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATES_P12_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
+        run: |
+          for variable in \
+            APPLE_CERTIFICATES_P12_BASE64 \
+            APPLE_CERTIFICATES_P12_PASSWORD \
+            APPLE_PROVISIONING_PROFILE_BASE64 \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_PROVISIONING_PROFILE_NAME
+          do
+            if [[ -z "${!variable}" ]]; then
+              echo "Missing required iOS signing secret: $variable" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install Apple certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATES_P12_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATES_P12_PASSWORD }}
+
+      - name: Install provisioning profile
+        shell: bash
+        env:
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          profile_path="$RUNNER_TEMP/cortex-terminal.mobileprovision"
+          echo "$APPLE_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile_path"
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp "$profile_path" ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Publish iOS shell
+        run: |
+          dotnet publish "${{ env.MAUI_PROJECT }}" -c Release -f net10.0-ios \
+            -p:ApplicationVersion=${{ needs.build-web.outputs.build_version }} \
+            -p:ApplicationDisplayVersion=${{ needs.build-web.outputs.display_version }} \
+            -p:ArchiveOnBuild=true \
+            -p:RuntimeIdentifier=ios-arm64 \
+            -p:CodesignKey="${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+            -p:CodesignProvision="${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}"
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-terminal-ios-${{ needs.build-web.outputs.display_version }}
+          path: mobile/maui/CortexTerminal.MobileShell/bin/Release/net10.0-ios/ios-arm64/publish/**/*.ipa
+          if-no-files-found: warn

@@ -1,0 +1,118 @@
+name: Package Worker Runtime
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WORKER_PROJECT: worker/src/CortexTerminal.Worker/CortexTerminal.Worker.csproj
+
+jobs:
+  package-linux-x64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish worker for linux-x64
+        run: |
+          dotnet publish "${{ env.WORKER_PROJECT }}" -c Release -r linux-x64 \
+            --self-contained true \
+            /p:PublishSingleFile=true \
+            /p:IncludeNativeLibrariesForSelfExtract=true \
+            /p:DebugType=None \
+            /p:DebugSymbols=false \
+            -o artifacts/worker/linux-x64
+
+      - name: Archive linux-x64 package
+        run: |
+          mkdir -p artifacts/release
+          tar -C artifacts/worker -czf artifacts/release/cortex-terminal-worker-linux-x64.tar.gz linux-x64
+
+      - name: Upload linux-x64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-terminal-worker-linux-x64
+          path: artifacts/release/cortex-terminal-worker-linux-x64.tar.gz
+          if-no-files-found: error
+
+  package-osx-arm64:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish worker for osx-arm64
+        run: |
+          dotnet publish "${{ env.WORKER_PROJECT }}" -c Release -r osx-arm64 \
+            --self-contained true \
+            /p:PublishSingleFile=true \
+            /p:IncludeNativeLibrariesForSelfExtract=true \
+            /p:DebugType=None \
+            /p:DebugSymbols=false \
+            -o artifacts/worker/osx-arm64
+
+      - name: Archive osx-arm64 package
+        run: |
+          mkdir -p artifacts/release
+          tar -C artifacts/worker -czf artifacts/release/cortex-terminal-worker-osx-arm64.tar.gz osx-arm64
+
+      - name: Upload osx-arm64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-terminal-worker-osx-arm64
+          path: artifacts/release/cortex-terminal-worker-osx-arm64.tar.gz
+          if-no-files-found: error
+
+  package-win-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish worker for win-x64
+        shell: pwsh
+        run: |
+          dotnet publish "${{ env.WORKER_PROJECT }}" -c Release -r win-x64 `
+            --self-contained true `
+            /p:PublishSingleFile=true `
+            /p:IncludeNativeLibrariesForSelfExtract=true `
+            /p:DebugType=None `
+            /p:DebugSymbols=false `
+            -o artifacts/worker/win-x64
+
+      - name: Archive win-x64 package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/release | Out-Null
+          Compress-Archive -Path artifacts/worker/win-x64/* -DestinationPath artifacts/release/cortex-terminal-worker-win-x64.zip -Force
+
+      - name: Upload win-x64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-terminal-worker-win-x64
+          path: artifacts/release/cortex-terminal-worker-win-x64.zip
+          if-no-files-found: error

@@ -8,7 +8,8 @@ public sealed class WorkerGatewayAccessTokenManager(
     ILogger<WorkerGatewayAccessTokenManager> logger,
     string workerId,
     string displayName,
-    string cacheFilePath)
+    string cacheFilePath,
+    string? workerRegistrationKey)
 {
     private static readonly TimeSpan RefreshSkew = TimeSpan.FromMinutes(2);
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -54,69 +55,38 @@ public sealed class WorkerGatewayAccessTokenManager(
                 await DeleteTokenCacheIfExistsAsync(cancellationToken);
             }
 
-            currentToken = await AuthorizeDeviceAsync(cancellationToken);
-            await SaveTokenAsync(currentToken, cancellationToken);
-            return currentToken.AccessToken;
+            if (!string.IsNullOrWhiteSpace(workerRegistrationKey))
+            {
+                var registrationKeyResult = await authClient.ExchangeWorkerRegistrationKeyAsync(
+                    workerId,
+                    displayName,
+                    workerRegistrationKey,
+                    cancellationToken);
+
+                if (registrationKeyResult.IsSuccess)
+                {
+                    currentToken = registrationKeyResult.Token;
+                    await SaveTokenAsync(currentToken!, cancellationToken);
+                    logger.LogInformation("[worker:auth-registration-key-success] WorkerId={WorkerId}", workerId);
+                    return currentToken!.AccessToken;
+                }
+
+                logger.LogWarning(
+                    "[worker:auth-registration-key-failed] WorkerId={WorkerId}, Error={Error}",
+                    workerId,
+                    registrationKeyResult.Error);
+
+                throw new InvalidOperationException(
+                    $"Worker registration key authentication failed: {registrationKeyResult.Error ?? "unknown_error"} - {registrationKeyResult.ErrorDescription}");
+            }
+
+            throw new InvalidOperationException(
+                "WORKER_USER_KEY is required. Runner auth model is the only supported worker bootstrap flow.");
         }
         finally
         {
             gate.Release();
         }
-    }
-
-    private async Task<WorkerGatewayAuthClient.WorkerAccessToken> AuthorizeDeviceAsync(CancellationToken cancellationToken)
-    {
-        var challenge = await authClient.StartDeviceAuthorizationAsync(workerId, displayName, cancellationToken);
-
-        logger.LogWarning(
-            "[worker:device-auth-required] WorkerId={WorkerId}, UserCode={UserCode}, VerificationUri={VerificationUri}",
-            workerId,
-            challenge.UserCode,
-            challenge.VerificationUri);
-
-        Console.WriteLine();
-        Console.WriteLine("=== Cortex Worker Device Pairing ===");
-        Console.WriteLine($"Worker: {challenge.DisplayName} ({challenge.WorkerId})");
-        Console.WriteLine($"Pairing code: {challenge.UserCode}");
-        Console.WriteLine("请在已登录的 mobile 里输入这个 Pairing Code 完成授权。");
-        Console.WriteLine();
-
-        var pollingDelay = TimeSpan.FromSeconds(Math.Max(1, challenge.Interval));
-        var expiresAtUtc = DateTime.UtcNow.AddSeconds(Math.Max(30, challenge.ExpiresIn));
-
-        while (DateTime.UtcNow < expiresAtUtc)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var exchangeResult = await authClient.ExchangeDeviceCodeAsync(challenge.DeviceCode, cancellationToken);
-            if (exchangeResult.IsSuccess)
-            {
-                logger.LogInformation("[worker:device-auth-approved] WorkerId={WorkerId}", workerId);
-                return exchangeResult.Token!;
-            }
-
-            if (string.Equals(exchangeResult.Error, "authorization_pending", StringComparison.Ordinal))
-            {
-                await Task.Delay(pollingDelay, cancellationToken);
-                continue;
-            }
-
-            if (string.Equals(exchangeResult.Error, "slow_down", StringComparison.Ordinal))
-            {
-                pollingDelay += TimeSpan.FromSeconds(5);
-                await Task.Delay(pollingDelay, cancellationToken);
-                continue;
-            }
-
-            if (string.Equals(exchangeResult.Error, "expired_token", StringComparison.Ordinal))
-            {
-                break;
-            }
-
-            throw new InvalidOperationException(
-                $"Worker device authorization failed: {exchangeResult.Error ?? "unknown_error"} - {exchangeResult.ErrorDescription}");
-        }
-
-        throw new InvalidOperationException("Worker device authorization expired before approval completed.");
     }
 
     private async Task<WorkerGatewayAuthClient.WorkerAccessToken?> LoadCachedTokenAsync(CancellationToken cancellationToken)

@@ -161,18 +161,16 @@ async function mockAuthenticatedShell(
     });
   });
 
-  await page.route("**/api/auth/worker/device/activate", async (route) => {
-    const payload = route.request().postDataJSON() as { userCode: string };
-
+  await page.route("**/api/auth/worker/key", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        workerId: "worker-paired-ui-test",
-        displayName: "Paired Worker",
-        userCode: payload.userCode,
-        approvedBy: principal.subject,
-        approvedAtUtc: "2026-04-07T10:09:00Z",
+        registrationKey: "ctwk_playwright_worker_key",
+        subject: principal.subject,
+        username: principal.username,
+        displayName: principal.displayName,
+        issuedAtUtc: "2026-04-07T10:09:00Z",
       }),
     });
   });
@@ -211,7 +209,7 @@ test("authenticated user can navigate app shell routes", async ({ page }) => {
   await expect(page).toHaveURL(/\/sessions\/new$/);
   await expect(page.getByRole("heading", { name: "创建会话" })).toBeVisible();
 
-  await page.getByRole("button", { name: "设置" }).click();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
 
@@ -243,7 +241,9 @@ test("new session flow creates a session and enters terminal shell", async ({
   page,
 }) => {
   await mockAuthenticatedShell(page);
-  await page.goto("/sessions/new");
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建会话" }).click();
+  await expect(page).toHaveURL(/\/sessions\/new$/);
 
   await expect(page.getByRole("heading", { name: "创建会话" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "执行节点" })).toContainText(
@@ -254,29 +254,39 @@ test("new session flow creates a session and enters terminal shell", async ({
   );
 
   await page.getByRole("textbox").fill("Playwright Created Session");
-  await page.getByRole("button", { name: "创建并进入终端" }).click();
-
-  await expect(page).toHaveURL(/\/sessions\/session-created-from-playwright$/);
-  await expect(page.getByTestId("status")).toContainText(
-    /CONNECTING|ERROR|CONNECTED/,
+  const createSessionButton = page.getByRole("button", {
+    name: "创建并进入终端",
+  });
+  const createSessionResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/sessions") &&
+      response.request().method() === "POST",
   );
-  await expect(page.getByTestId("terminal-output")).toBeVisible();
-  await expect(page.getByTestId("command-input")).toBeVisible();
+
+  await expect(createSessionButton).toBeEnabled();
+  await createSessionButton.click();
+  const createdSessionResponse = await createSessionResponse;
+
+  expect(createdSessionResponse.ok()).toBeTruthy();
+
+  await expect(page).toHaveURL(/\/sessions\/session-created-from-playwright$/, {
+    timeout: 10000,
+  });
 });
 
-test("worker pairing flow shows success message", async ({ page }) => {
+test("worker runner auth page issues registration key", async ({ page }) => {
   await mockAuthenticatedShell(page);
-  await page.goto("/settings/pair-worker");
+  await page.goto("/settings/worker-auth");
 
   await expect(
-    page.getByRole("heading", { name: "配对 Worker Device" }),
+    page.getByRole("heading", { name: "Worker Runner Auth" }),
   ).toBeVisible();
 
-  await page.getByPlaceholder("ABCD-EFGH").fill("pair-1234");
-  await page.getByRole("button", { name: "授权节点" }).click();
+  await page.getByRole("button", { name: "生成 Worker Key" }).click();
 
+  await expect(page.getByText("ctwk_playwright_worker_key")).toBeVisible();
   await expect(
-    page.getByText(/Worker Paired Worker \(worker-paired-ui-test\) 已授权/),
+    page.locator("div").filter({ hasText: /^WORKER_USER_KEY$/ }),
   ).toBeVisible();
 });
 

@@ -1,33 +1,39 @@
 import { create } from "zustand";
 
 type WorkerPairingStore = {
-  workerPairingCode: string;
-  workerPairingError: string | null;
-  workerPairingMessage: string | null;
-  isApprovingWorkerPairing: boolean;
-  setWorkerPairingCode: (workerPairingCode: string) => void;
-  setWorkerPairingError: (workerPairingError: string | null) => void;
-  setWorkerPairingMessage: (workerPairingMessage: string | null) => void;
-  setIsApprovingWorkerPairing: (isApprovingWorkerPairing: boolean) => void;
+  workerRegistrationKey: string | null;
+  workerRegistrationKeyIssuedAtUtc: string | null;
+  workerRegistrationKeyError: string | null;
+  isIssuingWorkerRegistrationKey: boolean;
+  setWorkerRegistrationKey: (workerRegistrationKey: string | null) => void;
+  setWorkerRegistrationKeyIssuedAtUtc: (issuedAtUtc: string | null) => void;
+  setWorkerRegistrationKeyError: (
+    workerRegistrationKeyError: string | null,
+  ) => void;
+  setIsIssuingWorkerRegistrationKey: (
+    isIssuingWorkerRegistrationKey: boolean,
+  ) => void;
   resetWorkerPairingState: () => void;
 };
 
 export const useWorkerPairingStore = create<WorkerPairingStore>((set) => ({
-  workerPairingCode: "",
-  workerPairingError: null,
-  workerPairingMessage: null,
-  isApprovingWorkerPairing: false,
-  setWorkerPairingCode: (workerPairingCode) => set({ workerPairingCode }),
-  setWorkerPairingError: (workerPairingError) => set({ workerPairingError }),
-  setWorkerPairingMessage: (workerPairingMessage) =>
-    set({ workerPairingMessage }),
-  setIsApprovingWorkerPairing: (isApprovingWorkerPairing) =>
-    set({ isApprovingWorkerPairing }),
+  workerRegistrationKey: null,
+  workerRegistrationKeyIssuedAtUtc: null,
+  workerRegistrationKeyError: null,
+  isIssuingWorkerRegistrationKey: false,
+  setWorkerRegistrationKey: (workerRegistrationKey) =>
+    set({ workerRegistrationKey }),
+  setWorkerRegistrationKeyIssuedAtUtc: (workerRegistrationKeyIssuedAtUtc) =>
+    set({ workerRegistrationKeyIssuedAtUtc }),
+  setWorkerRegistrationKeyError: (workerRegistrationKeyError) =>
+    set({ workerRegistrationKeyError }),
+  setIsIssuingWorkerRegistrationKey: (isIssuingWorkerRegistrationKey) =>
+    set({ isIssuingWorkerRegistrationKey }),
   resetWorkerPairingState: () =>
     set({
-      workerPairingCode: "",
-      workerPairingError: null,
-      workerPairingMessage: null,
-      isApprovingWorkerPairing: false,
+      workerRegistrationKey: null,
+      workerRegistrationKeyIssuedAtUtc: null,
+      workerRegistrationKeyError: null,
+      isIssuingWorkerRegistrationKey: false,
     }),
 }));

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CortexTerminal.Gateway.Models.Workers;
+using CortexTerminal.Gateway.Services.Workers;
 
 namespace CortexTerminal.Gateway.Contracts.Workers;
 
@@ -8,6 +9,7 @@ public sealed record WorkerNodeResponse(
     string DisplayName,
     string? ModelName,
     IReadOnlyList<string> AvailablePaths,
+    IReadOnlyList<string> SupportedAgentFamilies,
     WorkerLifecycleState LastKnownState,
     string? CurrentConnectionId,
     DateTime CreatedAtUtc,
@@ -22,6 +24,7 @@ public sealed record WorkerNodeResponse(
             worker.DisplayName,
             worker.ModelName,
             DeserializePaths(worker.AvailablePathsJson),
+            WorkerAgentFamilySupport.DeserializeSupportedAgentFamilies(worker.SupportedAgentFamiliesJson, worker.ModelName),
             worker.State,
             worker.CurrentConnectionId,
             worker.CreatedAtUtc,
@@ -42,7 +45,6 @@ public sealed record WorkerNodeResponse(
             var paths = JsonSerializer.Deserialize<string[]>(availablePathsJson);
             return paths?
                 .Where(path => !string.IsNullOrWhiteSpace(path))
-                .Select(path => path.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .ToArray()
                 ?? [];

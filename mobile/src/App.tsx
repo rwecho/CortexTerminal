@@ -73,7 +73,7 @@ export default function App() {
         />
       ) : (
         <div className="flex h-screen flex-col overflow-hidden bg-black font-sans text-white select-none">
-          <div className="relative flex flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <Routes>
               <Route path="/" element={<HomeRoute />} />
               <Route path="/sessions/new" element={<NewSessionRoute />} />
@@ -81,7 +81,7 @@ export default function App() {
               <Route path="/audit" element={<AuditRoute />} />
               <Route path="/settings" element={<SettingsRoute />} />
               <Route
-                path="/settings/pair-worker"
+                path="/settings/worker-auth"
                 element={<WorkerPairingRoute />}
               />
               <Route path="*" element={<Navigate to="/" replace />} />

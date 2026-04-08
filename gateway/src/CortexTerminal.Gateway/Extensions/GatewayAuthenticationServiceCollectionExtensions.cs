@@ -89,7 +89,7 @@ public static class GatewayAuthenticationServiceCollectionExtensions
 
                 options.AllowPasswordFlow();
                 options.AllowClientCredentialsFlow();
-                options.AllowCustomFlow("urn:cortex:grant-type:worker_device_code");
+                options.AllowCustomFlow("urn:cortex:grant-type:worker_registration_key");
                 options.AllowRefreshTokenFlow();
                 options.AcceptAnonymousClients();
 

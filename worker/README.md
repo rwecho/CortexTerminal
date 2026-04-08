@@ -31,3 +31,20 @@
   - `GATEWAY_BASE_URL=http://localhost:5050 WORKER_ID=worker-1 dotnet run --project worker/src/CortexTerminal.Worker`
 - Run tests:
   - `dotnet test worker/tests/CortexTerminal.Worker.Tests/CortexTerminal.Worker.Tests.csproj`
+
+## 打包与安装 Package + install
+
+- GitHub Actions:
+  - `.github/workflows/worker-package.yml` 会产出 `linux-x64`、`osx-arm64`、`win-x64` 三个平台安装包。
+- 安装包内容：
+  - self-contained worker executable
+  - `scripts/install-worker.sh`
+  - `scripts/install-worker.ps1`
+  - `scripts/worker.env.example`
+- Unix/macOS 安装：
+  - 解压后执行 `./scripts/install-worker.sh --install-dir ~/.cortex-terminal/worker --force`
+- Windows 安装：
+  - 解压后执行 `pwsh -File .\scripts\install-worker.ps1 -InstallDir "$HOME/.cortex-terminal/worker" -Force`
+- 安装完成后：
+  - 编辑 `config/worker.env`
+  - 使用生成的 `run-worker.sh` 或 `run-worker.ps1` 启动 worker

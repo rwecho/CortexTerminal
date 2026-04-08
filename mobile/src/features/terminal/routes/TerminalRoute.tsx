@@ -10,6 +10,7 @@ export function TerminalRoute() {
       activeWorker={terminal.activeWorker}
       currentPath={terminal.currentPath}
       connectionState={terminal.connectionState}
+      recoverySnapshot={terminal.recoverySnapshot}
       errorMessage={terminal.errorMessage}
       terminalInteraction={terminal.terminalInteraction}
       showInteractionComposer={terminal.showInteractionComposer}
@@ -17,6 +18,7 @@ export function TerminalRoute() {
       inputMode={terminal.inputMode}
       inputValue={terminal.inputValue}
       isPressing={terminal.isPressing}
+      pendingAttachments={terminal.pendingAttachments}
       terminalHostRef={terminal.terminalHostRef}
       commandInputRef={terminal.commandInputRef}
       onBack={terminal.handleLeaveTerminal}
@@ -28,8 +30,12 @@ export function TerminalRoute() {
       }
       onInputValueChange={terminal.setInputValue}
       onInputSubmit={terminal.handleSubmitInput}
-      onVoicePressStart={() => terminal.setIsPressing(true)}
+      onAddAttachment={terminal.handleAddAttachment}
+      onRemoveAttachment={terminal.handleRemoveAttachment}
+      onVoicePressStart={terminal.handleVoicePressStart}
       onVoicePressEnd={terminal.handleVoiceRelease}
+      onRunDoctor={terminal.handleRunDoctor}
+      onReconnect={terminal.connectCurrentSession}
       onCloseInteractionComposer={() => {
         terminal.setIsInteractionCustomInputVisible(false);
         terminal.setInputValue("");

@@ -8,11 +8,14 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { createRelayClient } from "../../../lib/relayClient";
+import { createRelayClient, type RelayClient } from "../../../lib/relayClient";
 import { gatewayUrl } from "../../app/config";
 import { buildAppPath } from "../../app/routeUtils";
 import { useAuthFailureHandler } from "../../app/hooks/useAuthFailureHandler";
-import { useAuthStore } from "../../auth/store/useAuthStore";
+import {
+  selectIsAppLoggedIn,
+  useAuthStore,
+} from "../../auth/store/useAuthStore";
 import { useSessionsStore } from "../../sessions/store/useSessionsStore";
 import { useTerminalStore } from "../store/useTerminalStore";
 import {
@@ -22,6 +25,25 @@ import {
 } from "../interactionDetector";
 import { buildSessionBootLogs, createRequestId } from "../../app/appUtils";
 import { buildSessionAccessError } from "../terminalUtils";
+import {
+  deriveTerminalRecoverySnapshot,
+  type TerminalRecoverySnapshot,
+} from "../terminalRecovery";
+import {
+  getNativeBridgeSource,
+  pickNativeFiles,
+  showNativeAlert,
+  showNativeToast,
+  startNativeRecording,
+  stopNativeRecording,
+  type NativePickedFile,
+  type NativeRecordedAudio,
+} from "../../native/bridge/nativeBridge";
+import type { PendingAttachment } from "../terminalAttachmentTypes";
+import {
+  buildAttachmentCommandPayload,
+  buildDoctorCommandPayload,
+} from "../relayControlFrames";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -30,9 +52,19 @@ export function useTerminalRuntime() {
   const { sessionId: routedSessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const accessToken = useAuthStore((state) => state.accessToken);
+  const isAuthBootstrapping = useAuthStore(
+    (state) => state.isAuthBootstrapping,
+  );
+  const isAppLoggedIn = useAuthStore(selectIsAppLoggedIn);
   const handleAuthFailure = useAuthFailureHandler();
   const workers = useSessionsStore((state) => state.workers);
   const sessions = useSessionsStore((state) => state.sessions);
+  const hasLoadedManagementSnapshot = useSessionsStore(
+    (state) => state.hasLoadedManagementSnapshot,
+  );
+  const isLoadingManagement = useSessionsStore(
+    (state) => state.isLoadingManagement,
+  );
   const setManagementError = useSessionsStore(
     (state) => state.setManagementError,
   );
@@ -47,6 +79,9 @@ export function useTerminalRuntime() {
   const terminalLogs = useTerminalStore((state) => state.terminalLogs);
   const terminalInteraction = useTerminalStore(
     (state) => state.terminalInteraction,
+  );
+  const pendingAttachments = useTerminalStore(
+    (state) => state.pendingAttachments,
   );
   const isInteractionCustomInputVisible = useTerminalStore(
     (state) => state.isInteractionCustomInputVisible,
@@ -64,6 +99,15 @@ export function useTerminalRuntime() {
   const setTerminalLogs = useTerminalStore((state) => state.setTerminalLogs);
   const appendTerminalLogs = useTerminalStore(
     (state) => state.appendTerminalLogs,
+  );
+  const addPendingAttachments = useTerminalStore(
+    (state) => state.addPendingAttachments,
+  );
+  const removePendingAttachment = useTerminalStore(
+    (state) => state.removePendingAttachment,
+  );
+  const clearPendingAttachments = useTerminalStore(
+    (state) => state.clearPendingAttachments,
   );
   const setTerminalInteraction = useTerminalStore(
     (state) => state.setTerminalInteraction,
@@ -89,6 +133,36 @@ export function useTerminalRuntime() {
   const traceIdRef = useRef(traceId);
   const terminalTranscriptRef = useRef("");
   const bootstrappedSessionIdRef = useRef<string | null>(null);
+  const relayClientRef = useRef<RelayClient | null>(null);
+
+  const createPendingFileAttachment = useCallback(
+    (pickedFile: NativePickedFile): PendingAttachment => ({
+      id: createRequestId(),
+      kind: "file",
+      displayName: pickedFile.fileName,
+      fileName: pickedFile.fileName,
+      mimeType: pickedFile.contentType,
+      size: pickedFile.size,
+      base64: pickedFile.base64,
+      source: getNativeBridgeSource(),
+    }),
+    [],
+  );
+
+  const createPendingAudioAttachment = useCallback(
+    (audio: NativeRecordedAudio): PendingAttachment => ({
+      id: createRequestId(),
+      kind: "audio",
+      displayName: `语音 · ${audio.fileName}`,
+      fileName: audio.fileName,
+      mimeType: audio.contentType,
+      size: audio.size,
+      base64: audio.base64,
+      durationMs: audio.durationMs,
+      source: getNativeBridgeSource(),
+    }),
+    [],
+  );
 
   const activeSession = useMemo(
     () =>
@@ -106,6 +180,16 @@ export function useTerminalRuntime() {
     Boolean(terminalInteraction) && isInteractionCustomInputVisible;
   const shouldHideDefaultComposer =
     Boolean(terminalInteraction) && !showInteractionComposer;
+  const recoverySnapshot: TerminalRecoverySnapshot | null = useMemo(
+    () =>
+      deriveTerminalRecoverySnapshot({
+        activeSession,
+        activeWorker,
+        connectionState,
+        errorMessage: managementError,
+      }),
+    [activeSession, activeWorker, connectionState, managementError],
+  );
 
   const updateTerminalInteraction = useCallback(
     (nextText: string) => {
@@ -139,6 +223,59 @@ export function useTerminalRuntime() {
     },
     [setIsInteractionCustomInputVisible, setTerminalInteraction],
   );
+
+  const reattachCurrentSession = useCallback(async () => {
+    const currentSession = activeSessionRef.current;
+    const client = relayClientRef.current;
+
+    if (!currentSession?.workerId || !client) {
+      return;
+    }
+
+    try {
+      setConnectionState("connecting");
+      setManagementError(null);
+      appendTerminalLogs([
+        {
+          type: "system",
+          text: `Relay 已恢复，正在重新附着 session=${currentSession.sessionId} 到 worker=${currentSession.workerId}...`,
+        },
+      ]);
+
+      await client.connect(currentSession.sessionId, currentSession.workerId);
+      setCurrentPath(currentSession.workingDirectory ?? "/claude");
+      await client.sendMobileFrame(
+        currentSession.sessionId,
+        encoder.encode("__ct_init__"),
+        {
+          requestId: `sys-reattach-${Date.now()}`,
+          traceId: traceIdRef.current,
+        },
+      );
+    } catch (error) {
+      const message = (error as Error).message;
+
+      if (handleAuthFailure(message)) {
+        await client.disconnect().catch(() => undefined);
+        return;
+      }
+
+      setConnectionState("error");
+      setManagementError(`重新附着 session 失败：${message}`);
+      appendTerminalLogs([
+        {
+          type: "system",
+          text: `Relay reattach failed: ${message}`,
+        },
+      ]);
+    }
+  }, [
+    appendTerminalLogs,
+    handleAuthFailure,
+    setConnectionState,
+    setCurrentPath,
+    setManagementError,
+  ]);
 
   const relayClient = useMemo(
     () =>
@@ -215,15 +352,53 @@ export function useTerminalRuntime() {
           ]);
         },
         () => accessToken,
+        {
+          onReconnecting: (error) => {
+            setConnectionState("reconnecting");
+            appendTerminalLogs([
+              {
+                type: "system",
+                text: `Relay 连接中断，正在自动重连...${error?.message ? ` ${error.message}` : ""}`,
+              },
+            ]);
+          },
+          onReconnected: async () => {
+            await reattachCurrentSession();
+          },
+          onClose: (error) => {
+            if (!activeSessionRef.current) {
+              return;
+            }
+
+            setConnectionState("idle");
+            appendTerminalLogs([
+              {
+                type: "system",
+                text: `Relay 已断开${error?.message ? `：${error.message}` : ""}`,
+              },
+            ]);
+          },
+        },
       ),
     [
       accessToken,
       appendTerminalLogs,
+      reattachCurrentSession,
       setConnectionState,
       setCurrentPath,
       updateTerminalInteraction,
     ],
   );
+
+  useEffect(() => {
+    relayClientRef.current = relayClient;
+
+    return () => {
+      if (relayClientRef.current === relayClient) {
+        relayClientRef.current = null;
+      }
+    };
+  }, [relayClient]);
 
   const focusCommandInput = useCallback(() => {
     requestAnimationFrame(() => {
@@ -473,6 +648,22 @@ export function useTerminalRuntime() {
       return true;
     } catch (error) {
       const message = (error as Error).message;
+
+      const isTransientStartupInterruption =
+        message.includes("stopped during negotiation") ||
+        message.includes("not in the 'Connected' State");
+
+      if (isTransientStartupInterruption) {
+        setConnectionState("idle");
+        appendTerminalLogs([
+          {
+            type: "system",
+            text: `Relay 握手被中断，正在自动重试：${message}`,
+          },
+        ]);
+        return false;
+      }
+
       if (handleAuthFailure(message)) {
         await relayClient.disconnect().catch(() => undefined);
         return false;
@@ -506,6 +697,14 @@ export function useTerminalRuntime() {
       return;
     }
 
+    if (isAuthBootstrapping || !isAppLoggedIn) {
+      return;
+    }
+
+    if (isLoadingManagement || !hasLoadedManagementSnapshot) {
+      return;
+    }
+
     const routedSession = sessions.find(
       (session) => session.sessionId === routedSessionId,
     );
@@ -524,6 +723,10 @@ export function useTerminalRuntime() {
   }, [
     connectCurrentSession,
     connectionState,
+    hasLoadedManagementSnapshot,
+    isAppLoggedIn,
+    isAuthBootstrapping,
+    isLoadingManagement,
     navigate,
     relayClient,
     routedSessionId,
@@ -543,7 +746,10 @@ export function useTerminalRuntime() {
       return true;
     }
 
-    if (connectionState === "connecting") {
+    if (
+      connectionState === "connecting" ||
+      connectionState === "reconnecting"
+    ) {
       return false;
     }
 
@@ -623,16 +829,245 @@ export function useTerminalRuntime() {
     [focusCommandInput, sendCommand, setIsInteractionCustomInputVisible],
   );
 
+  const handleAddAttachment = useCallback(async () => {
+    try {
+      const pickedFiles = await pickNativeFiles();
+
+      if (pickedFiles.length === 0) {
+        return;
+      }
+
+      const nextAttachments = pickedFiles.map(createPendingFileAttachment);
+      addPendingAttachments(nextAttachments);
+      appendTerminalLogs([
+        {
+          type: "system",
+          text: `已通过 ${getNativeBridgeSource()} bridge 选择 ${nextAttachments.length} 个附件。`,
+        },
+      ]);
+      await showNativeToast(`已添加 ${nextAttachments.length} 个附件`);
+    } catch (error) {
+      await showNativeAlert({
+        title: "附件选择失败",
+        message: (error as Error).message,
+      });
+    }
+  }, [addPendingAttachments, appendTerminalLogs, createPendingFileAttachment]);
+
+  const handleRemoveAttachment = useCallback(
+    async (attachmentId: string) => {
+      const attachment = pendingAttachments.find(
+        (item) => item.id === attachmentId,
+      );
+
+      if (!attachment) {
+        return;
+      }
+
+      const confirmed = await showNativeAlert({
+        title: "移除附件",
+        message: `要移除 ${attachment.displayName} 吗？`,
+        accept: "移除",
+        cancel: "保留",
+      });
+
+      if (!confirmed) {
+        return;
+      }
+
+      removePendingAttachment(attachmentId);
+      await showNativeToast(`已移除 ${attachment.displayName}`);
+    },
+    [pendingAttachments, removePendingAttachment],
+  );
+
+  const handleVoicePressStart = useCallback(async () => {
+    try {
+      await startNativeRecording();
+      setIsPressing(true);
+      await showNativeToast("开始录音");
+    } catch (error) {
+      setIsPressing(false);
+      await showNativeAlert({
+        title: "无法开始录音",
+        message: (error as Error).message,
+      });
+    }
+  }, [setIsPressing]);
+
   const handleVoiceRelease = useCallback(async () => {
+    if (!isPressing) {
+      return;
+    }
+
     setIsPressing(false);
-    await sendCommand("检查当前工作目录下的项目结构");
-  }, [sendCommand, setIsPressing]);
+
+    try {
+      const audio = await stopNativeRecording();
+
+      if (!audio) {
+        await showNativeToast("录音已取消");
+        return;
+      }
+
+      const attachment = createPendingAudioAttachment(audio);
+      addPendingAttachments([attachment]);
+      setInputMode("text");
+      appendTerminalLogs([
+        {
+          type: "system",
+          text: `语音附件已加入待发送列表：${attachment.fileName}`,
+        },
+      ]);
+      await showNativeToast("录音已保存为附件");
+    } catch (error) {
+      await showNativeAlert({
+        title: "录音失败",
+        message: (error as Error).message,
+      });
+    }
+  }, [
+    addPendingAttachments,
+    appendTerminalLogs,
+    createPendingAudioAttachment,
+    isPressing,
+    setInputMode,
+    setIsPressing,
+  ]);
+
+  const sendAttachmentCommand = useCallback(
+    async (command: string, attachments: PendingAttachment[]) => {
+      resetTerminalInteraction();
+
+      const connected = await ensureTerminalConnection();
+      if (!connected || !activeSession) {
+        appendTerminalLogs([
+          { type: "system", text: "Relay 正在连接中，请稍候再发送。" },
+        ]);
+        return false;
+      }
+
+      const requestId = createRequestId();
+      appendTerminalLogs([
+        { type: "command", text: command },
+        {
+          type: "system",
+          text: `正在上传 ${attachments.length} 个附件到 worker：${attachments
+            .map((attachment) => attachment.fileName)
+            .join(", ")}`,
+        },
+      ]);
+
+      try {
+        await relayClient.sendMobileFrame(
+          activeSession.sessionId,
+          buildAttachmentCommandPayload(command, attachments),
+          {
+            requestId,
+            traceId: traceIdRef.current,
+          },
+        );
+        return true;
+      } catch (error) {
+        appendTerminalLogs([
+          {
+            type: "system",
+            text: `Attachment send failed: ${(error as Error).message}`,
+          },
+        ]);
+        return false;
+      }
+    },
+    [
+      activeSession,
+      appendTerminalLogs,
+      ensureTerminalConnection,
+      relayClient,
+      resetTerminalInteraction,
+    ],
+  );
 
   const handleSubmitInput = useCallback(async () => {
-    const command = inputValue;
+    const command = inputValue.trim();
     setInputValue("");
+
+    if (pendingAttachments.length > 0) {
+      const effectiveCommand =
+        command || "请分析刚上传的附件，并总结关键信息。";
+      const sent = await sendAttachmentCommand(
+        effectiveCommand,
+        pendingAttachments,
+      );
+
+      if (sent) {
+        clearPendingAttachments();
+        await showNativeToast(
+          `已发送 ${pendingAttachments.length} 个附件到 worker`,
+        );
+      }
+
+      return;
+    }
+
     await sendCommand(command);
-  }, [inputValue, sendCommand, setInputValue]);
+  }, [
+    clearPendingAttachments,
+    inputValue,
+    pendingAttachments,
+    sendAttachmentCommand,
+    sendCommand,
+    setInputValue,
+  ]);
+
+  const handleRunDoctor = useCallback(async () => {
+    resetTerminalInteraction();
+
+    const connected = await ensureTerminalConnection();
+    if (!connected || !activeSession) {
+      appendTerminalLogs([
+        { type: "system", text: "Relay 正在连接中，请稍候再执行 doctor。" },
+      ]);
+      return;
+    }
+
+    const requestId = createRequestId();
+    appendTerminalLogs([
+      { type: "command", text: "doctor" },
+      {
+        type: "system",
+        text: `正在请求 worker ${activeSession.workerId} 执行环境自检...`,
+      },
+    ]);
+
+    try {
+      await relayClient.sendMobileFrame(
+        activeSession.sessionId,
+        buildDoctorCommandPayload(),
+        {
+          requestId,
+          traceId: traceIdRef.current,
+        },
+      );
+      await showNativeToast("已触发 worker doctor");
+    } catch (error) {
+      appendTerminalLogs([
+        {
+          type: "system",
+          text: `Doctor send failed: ${(error as Error).message}`,
+        },
+      ]);
+      await showNativeAlert({
+        title: "Doctor 执行失败",
+        message: (error as Error).message,
+      });
+    }
+  }, [
+    activeSession,
+    appendTerminalLogs,
+    ensureTerminalConnection,
+    relayClient,
+    resetTerminalInteraction,
+  ]);
 
   const handleLeaveTerminal = useCallback(() => {
     navigate(buildAppPath("home"));
@@ -643,6 +1078,7 @@ export function useTerminalRuntime() {
     activeWorker,
     currentPath,
     connectionState,
+    recoverySnapshot,
     errorMessage: managementError,
     terminalInteraction,
     showInteractionComposer,
@@ -650,6 +1086,7 @@ export function useTerminalRuntime() {
     inputMode,
     inputValue,
     isPressing,
+    pendingAttachments,
     traceId,
     terminalHostRef,
     commandInputRef,
@@ -658,8 +1095,12 @@ export function useTerminalRuntime() {
     setIsPressing,
     setIsInteractionCustomInputVisible,
     handleLeaveTerminal,
+    handleAddAttachment,
+    handleRemoveAttachment,
     handleTerminalInteractionAction,
+    handleVoicePressStart,
     handleVoiceRelease,
+    handleRunDoctor,
     handleSubmitInput,
     connectCurrentSession,
     disconnectCurrentServer,

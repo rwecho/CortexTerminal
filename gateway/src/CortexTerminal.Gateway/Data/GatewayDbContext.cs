@@ -95,6 +95,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(worker => worker.DisplayName).HasMaxLength(200);
             entity.Property(worker => worker.ModelName).HasMaxLength(120);
             entity.Property(worker => worker.AvailablePathsJson);
+            entity.Property(worker => worker.SupportedAgentFamiliesJson);
             entity.Property(worker => worker.CurrentConnectionId).HasMaxLength(200);
             entity.Property(worker => worker.State).HasConversion<string>().HasMaxLength(32);
         });
@@ -105,6 +106,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(session => session.SessionId).HasMaxLength(120);
             entity.Property(session => session.WorkerId).HasMaxLength(120);
             entity.Property(session => session.DisplayName).HasMaxLength(200);
+            entity.Property(session => session.AgentFamily).HasMaxLength(32);
             entity.Property(session => session.WorkingDirectory).HasMaxLength(1000);
             entity.Property(session => session.MobileConnectionId).HasMaxLength(200);
             entity.Property(session => session.TraceId).HasMaxLength(120);

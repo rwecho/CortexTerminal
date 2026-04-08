@@ -6,7 +6,7 @@ export type View =
   | "terminal"
   | "audit"
   | "settings"
-  | "pairWorker";
+  | "workerAuth";
 
 export type LogItem = {
   type: "system" | "command" | "ai";

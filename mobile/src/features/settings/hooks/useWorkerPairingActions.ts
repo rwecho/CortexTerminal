@@ -7,64 +7,53 @@ import { useWorkerPairingStore } from "../store/useWorkerPairingStore";
 
 export function useWorkerPairingActions() {
   const accessToken = useAuthStore((state) => state.accessToken);
-  const workerPairingCode = useWorkerPairingStore(
-    (state) => state.workerPairingCode,
+  const setWorkerRegistrationKey = useWorkerPairingStore(
+    (state) => state.setWorkerRegistrationKey,
   );
-  const setWorkerPairingError = useWorkerPairingStore(
-    (state) => state.setWorkerPairingError,
+  const setWorkerRegistrationKeyIssuedAtUtc = useWorkerPairingStore(
+    (state) => state.setWorkerRegistrationKeyIssuedAtUtc,
   );
-  const setWorkerPairingMessage = useWorkerPairingStore(
-    (state) => state.setWorkerPairingMessage,
+  const setWorkerRegistrationKeyError = useWorkerPairingStore(
+    (state) => state.setWorkerRegistrationKeyError,
   );
-  const setIsApprovingWorkerPairing = useWorkerPairingStore(
-    (state) => state.setIsApprovingWorkerPairing,
-  );
-  const setWorkerPairingCode = useWorkerPairingStore(
-    (state) => state.setWorkerPairingCode,
+  const setIsIssuingWorkerRegistrationKey = useWorkerPairingStore(
+    (state) => state.setIsIssuingWorkerRegistrationKey,
   );
   const handleAuthFailure = useAuthFailureHandler();
   const authClient = useMemo(() => createGatewayAuthClient(gatewayUrl), []);
 
-  const handleApproveWorkerPairing = useCallback(async () => {
-    const normalizedCode = workerPairingCode.trim().toUpperCase();
-    if (!accessToken || !normalizedCode) {
-      setWorkerPairingError(
-        "请输入 worker pairing code。\nPlease enter the worker pairing code.",
+  const handleIssueWorkerRegistrationKey = useCallback(async () => {
+    if (!accessToken) {
+      setWorkerRegistrationKeyError(
+        "当前登录态已失效，请重新登录后再生成 worker key。",
       );
       return;
     }
 
     try {
-      setIsApprovingWorkerPairing(true);
-      setWorkerPairingError(null);
-      setWorkerPairingMessage(null);
+      setIsIssuingWorkerRegistrationKey(true);
+      setWorkerRegistrationKeyError(null);
 
-      const result = await authClient.activateWorkerDevice(
-        accessToken,
-        normalizedCode,
-      );
-      setWorkerPairingMessage(
-        `Worker ${result.displayName} (${result.workerId}) 已授权，可在节点侧继续启动。`,
-      );
-      setWorkerPairingCode("");
+      const result = await authClient.issueWorkerRegistrationKey(accessToken);
+      setWorkerRegistrationKey(result.registrationKey);
+      setWorkerRegistrationKeyIssuedAtUtc(result.issuedAtUtc);
     } catch (error) {
       const message = (error as Error).message;
       if (!handleAuthFailure(message)) {
-        setWorkerPairingError(message);
+        setWorkerRegistrationKeyError(message);
       }
     } finally {
-      setIsApprovingWorkerPairing(false);
+      setIsIssuingWorkerRegistrationKey(false);
     }
   }, [
     accessToken,
     authClient,
     handleAuthFailure,
-    setIsApprovingWorkerPairing,
-    setWorkerPairingCode,
-    setWorkerPairingError,
-    setWorkerPairingMessage,
-    workerPairingCode,
+    setIsIssuingWorkerRegistrationKey,
+    setWorkerRegistrationKey,
+    setWorkerRegistrationKeyError,
+    setWorkerRegistrationKeyIssuedAtUtc,
   ]);
 
-  return { handleApproveWorkerPairing };
+  return { handleIssueWorkerRegistrationKey };
 }

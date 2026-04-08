@@ -6,6 +6,7 @@ import {
   Plus,
   Send,
   ShieldCheck,
+  Stethoscope,
   Terminal as TermIcon,
 } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
@@ -13,17 +14,25 @@ import type {
   GatewaySession,
   GatewayWorker,
 } from "../../lib/gatewayManagementClient";
+import { TerminalRecoveryBanner } from "./TerminalRecoveryBanner";
 import { TerminalInteractionBar } from "./TerminalInteractionBar";
 import type {
   TerminalInteraction,
   TerminalInteractionAction,
 } from "./interactionDetector";
+import { PendingAttachmentList } from "./PendingAttachmentList";
+import type { PendingAttachment } from "./terminalAttachmentTypes";
+import type {
+  TerminalConnectionState,
+  TerminalRecoverySnapshot,
+} from "./terminalRecovery";
 
 type TerminalPageProps = {
   activeSession: GatewaySession | null;
   activeWorker: GatewayWorker | null;
   currentPath: string;
-  connectionState: "idle" | "connecting" | "connected" | "error";
+  connectionState: TerminalConnectionState;
+  recoverySnapshot: TerminalRecoverySnapshot | null;
   errorMessage: string | null;
   terminalInteraction: TerminalInteraction | null;
   showInteractionComposer: boolean;
@@ -31,6 +40,7 @@ type TerminalPageProps = {
   inputMode: "text" | "voice";
   inputValue: string;
   isPressing: boolean;
+  pendingAttachments: PendingAttachment[];
   terminalHostRef: React.RefObject<HTMLDivElement | null>;
   commandInputRef: React.RefObject<HTMLInputElement | null>;
   onBack: () => void | Promise<void>;
@@ -40,9 +50,13 @@ type TerminalPageProps = {
   onInputModeToggle: () => void;
   onInputValueChange: (value: string) => void;
   onInputSubmit: () => void | Promise<void>;
-  onVoicePressStart: () => void;
+  onAddAttachment: () => void | Promise<void>;
+  onRemoveAttachment: (attachmentId: string) => void | Promise<void>;
+  onVoicePressStart: () => void | Promise<void>;
   onVoicePressEnd: () => void | Promise<void>;
+  onRunDoctor: () => void | Promise<void>;
   onCloseInteractionComposer: () => void;
+  onReconnect: () => void | Promise<void>;
 };
 
 export function TerminalPage({
@@ -50,6 +64,7 @@ export function TerminalPage({
   activeWorker,
   currentPath,
   connectionState,
+  recoverySnapshot,
   errorMessage,
   terminalInteraction,
   showInteractionComposer,
@@ -57,6 +72,7 @@ export function TerminalPage({
   inputMode,
   inputValue,
   isPressing,
+  pendingAttachments,
   terminalHostRef,
   commandInputRef,
   onBack,
@@ -64,9 +80,13 @@ export function TerminalPage({
   onInputModeToggle,
   onInputValueChange,
   onInputSubmit,
+  onAddAttachment,
+  onRemoveAttachment,
   onVoicePressStart,
   onVoicePressEnd,
+  onRunDoctor,
   onCloseInteractionComposer,
+  onReconnect,
 }: TerminalPageProps) {
   if (!activeSession) {
     return (
@@ -122,9 +142,11 @@ export function TerminalPage({
             className={`text-[10px] ${
               connectionState === "connected"
                 ? "text-green-500"
-                : connectionState === "error"
-                  ? "text-red-500"
-                  : "text-gray-500"
+                : connectionState === "reconnecting"
+                  ? "text-amber-500"
+                  : connectionState === "error"
+                    ? "text-red-500"
+                    : "text-gray-500"
             }`}
           >
             {connectionState.toUpperCase()}
@@ -136,6 +158,13 @@ export function TerminalPage({
         data-testid="terminal-output"
         className="flex-1 overflow-hidden bg-black p-2"
       >
+        {recoverySnapshot ? (
+          <TerminalRecoveryBanner
+            snapshot={recoverySnapshot}
+            onRetry={onReconnect}
+          />
+        ) : null}
+
         {errorMessage && (
           <div className="mb-2 rounded-2xl border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
             {errorMessage}
@@ -145,6 +174,11 @@ export function TerminalPage({
       </div>
 
       <div className="border-t border-[#111] bg-[#080808] px-2 pt-2 pb-6">
+        <PendingAttachmentList
+          attachments={pendingAttachments}
+          onRemove={onRemoveAttachment}
+        />
+
         {terminalInteraction && (
           <div className="mx-auto max-w-4xl">
             <TerminalInteractionBar
@@ -211,8 +245,16 @@ export function TerminalPage({
               ) : (
                 <button
                   type="button"
-                  onMouseDown={onVoicePressStart}
+                  onMouseDown={() => {
+                    void onVoicePressStart();
+                  }}
                   onMouseUp={() => {
+                    void onVoicePressEnd();
+                  }}
+                  onTouchStart={() => {
+                    void onVoicePressStart();
+                  }}
+                  onTouchEnd={() => {
                     void onVoicePressEnd();
                   }}
                   className={`h-full flex-1 rounded-xl text-sm font-bold transition-all ${
@@ -228,6 +270,24 @@ export function TerminalPage({
 
             {!showInteractionComposer && (
               <button
+                type="button"
+                onClick={() => {
+                  void onRunDoctor();
+                }}
+                className="p-2 text-gray-600"
+                aria-label="run worker doctor"
+                title="run worker doctor"
+              >
+                <Stethoscope size={22} />
+              </button>
+            )}
+
+            {!showInteractionComposer && (
+              <button
+                type="button"
+                onClick={() => {
+                  void onAddAttachment();
+                }}
                 className="p-2 text-gray-600"
                 aria-label="add attachment"
                 title="add attachment"
