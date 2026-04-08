@@ -34,7 +34,7 @@ env:
   MAUI_PROJECT: mobile/maui/CortexTerminal.MobileShell/CortexTerminal.MobileShell.csproj
   MAUI_WEBROOT: mobile/maui/CortexTerminal.MobileShell/Resources/Raw/wwwroot
   DOTNET_VERSION: 10.0.103
-  XCODE_VERSION: latest-stable
+  XCODE_VERSION: '26.2'
 
 jobs:
   build-web:
