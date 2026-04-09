@@ -40,15 +40,15 @@ jobs:
             /p:DebugSymbols=false \
             -o artifacts/worker/linux-x64
 
-        - name: Write linux-x64 package version metadata
-          shell: bash
-          run: |
-            package_version="${GITHUB_REF_NAME#v}"
-            if [[ -z "$package_version" || "$package_version" == "$GITHUB_REF_NAME" ]]; then
-              package_version="0.0.0-dev.${GITHUB_RUN_NUMBER}"
-            fi
+      - name: Write linux-x64 package version metadata
+        shell: bash
+        run: |
+          package_version="${GITHUB_REF_NAME#v}"
+          if [[ -z "$package_version" || "$package_version" == "$GITHUB_REF_NAME" ]]; then
+            package_version="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
 
-            printf '%s\n' "$package_version" > artifacts/worker/linux-x64/package-version.txt
+          printf '%s\n' "$package_version" > artifacts/worker/linux-x64/package-version.txt
 
       - name: Archive linux-x64 package
         run: |
@@ -84,15 +84,15 @@ jobs:
             /p:DebugSymbols=false \
             -o artifacts/worker/osx-arm64
 
-        - name: Write osx-arm64 package version metadata
-          shell: bash
-          run: |
-            package_version="${GITHUB_REF_NAME#v}"
-            if [[ -z "$package_version" || "$package_version" == "$GITHUB_REF_NAME" ]]; then
-              package_version="0.0.0-dev.${GITHUB_RUN_NUMBER}"
-            fi
+      - name: Write osx-arm64 package version metadata
+        shell: bash
+        run: |
+          package_version="${GITHUB_REF_NAME#v}"
+          if [[ -z "$package_version" || "$package_version" == "$GITHUB_REF_NAME" ]]; then
+            package_version="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
 
-            printf '%s\n' "$package_version" > artifacts/worker/osx-arm64/package-version.txt
+          printf '%s\n' "$package_version" > artifacts/worker/osx-arm64/package-version.txt
 
       - name: Archive osx-arm64 package
         run: |
@@ -129,15 +129,15 @@ jobs:
             /p:DebugSymbols=false `
             -o artifacts/worker/win-x64
 
-        - name: Write win-x64 package version metadata
-          shell: pwsh
-          run: |
-            $packageVersion = $env:GITHUB_REF_NAME.TrimStart('v')
-            if ([string]::IsNullOrWhiteSpace($packageVersion) -or $packageVersion -eq $env:GITHUB_REF_NAME) {
-              $packageVersion = "0.0.0-dev.$env:GITHUB_RUN_NUMBER"
-            }
+      - name: Write win-x64 package version metadata
+        shell: pwsh
+        run: |
+          $packageVersion = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ([string]::IsNullOrWhiteSpace($packageVersion) -or $packageVersion -eq $env:GITHUB_REF_NAME) {
+            $packageVersion = "0.0.0-dev.$env:GITHUB_RUN_NUMBER"
+          }
 
-            Set-Content -Path 'artifacts/worker/win-x64/package-version.txt' -Value $packageVersion -Encoding UTF8
+          Set-Content -Path 'artifacts/worker/win-x64/package-version.txt' -Value $packageVersion -Encoding UTF8
 
       - name: Bundle pinned NSSM into win-x64 package
         shell: pwsh
