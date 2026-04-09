@@ -23,14 +23,16 @@ public sealed record WorkerHostOptions(
         var workerId = Environment.GetEnvironmentVariable("WORKER_ID") ?? "worker-1";
         var gatewayBaseUrl = Environment.GetEnvironmentVariable("GATEWAY_BASE_URL") ?? "http://localhost:5050";
         var workerDisplayName = Environment.GetEnvironmentVariable("WORKER_DISPLAY_NAME") ?? workerId;
-        var workerModelName = Environment.GetEnvironmentVariable("WORKER_MODEL_NAME") ?? "Claude CLI";
-        var workerRuntimeCommand = WorkerRuntimeCatalog.ResolveDefaultRuntimeCommand(
-            workerModelName,
-            Environment.GetEnvironmentVariable("WORKER_RUNTIME_COMMAND"));
         var workerSupportedAgentFamilies = WorkerRuntimeCatalog.ResolveSupportedAgentFamilies(
-            workerModelName,
-            workerRuntimeCommand,
             Environment.GetEnvironmentVariable("WORKER_SUPPORTED_AGENT_FAMILIES"));
+        var workerRuntimeCommand = WorkerRuntimeCatalog.ResolveDefaultRuntimeCommand(
+            workerSupportedAgentFamilies,
+            Environment.GetEnvironmentVariable("WORKER_RUNTIME_COMMAND"),
+            Environment.GetEnvironmentVariable("WORKER_MODEL_NAME"));
+        var workerModelName = WorkerRuntimeCatalog.ResolveWorkerModelName(
+            Environment.GetEnvironmentVariable("WORKER_MODEL_NAME"),
+            workerSupportedAgentFamilies,
+            workerRuntimeCommand);
         var workerAvailablePaths = ParseAvailablePaths(
             Environment.GetEnvironmentVariable("WORKER_AVAILABLE_PATHS"),
             Environment.CurrentDirectory);
@@ -61,8 +63,8 @@ public sealed record WorkerHostOptions(
             workerUserKey,
             hubUrl,
             workerLogLevel,
-                workerHeartbeatInterval,
-                workerSessionMaintenance);
+            workerHeartbeatInterval,
+            workerSessionMaintenance);
     }
 
     private static LogLevel ParseLogLevel(string? value)

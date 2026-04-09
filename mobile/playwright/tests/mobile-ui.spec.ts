@@ -161,16 +161,18 @@ async function mockAuthenticatedShell(
     });
   });
 
-  await page.route("**/api/auth/worker/key", async (route) => {
+  await page.route("**/api/auth/worker/install-token", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        registrationKey: "ctwk_playwright_worker_key",
-        subject: principal.subject,
-        username: principal.username,
-        displayName: principal.displayName,
+        token: "iwk_PLAYWR1",
         issuedAtUtc: "2026-04-07T10:09:00Z",
+        expiresAtUtc: "2026-04-07T10:19:00Z",
+        installUrl:
+          "https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_PLAYWR1",
+        installCommand:
+          "curl -fsSL 'https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_PLAYWR1' | bash",
       }),
     });
   });
@@ -274,19 +276,19 @@ test("new session flow creates a session and enters terminal shell", async ({
   });
 });
 
-test("worker runner auth page issues registration key", async ({ page }) => {
+test("worker runner auth page issues install command", async ({ page }) => {
   await mockAuthenticatedShell(page);
   await page.goto("/settings/worker-auth");
 
   await expect(
-    page.getByRole("heading", { name: "Worker Runner Auth" }),
+    page.getByRole("heading", { name: "创建 Worker" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "生成 Worker Key" }).click();
+  await page.getByRole("button", { name: "生成安装命令" }).click();
 
-  await expect(page.getByText("ctwk_playwright_worker_key")).toBeVisible();
+  await expect(page.getByText("iwk_PLAYWR1")).toBeVisible();
   await expect(
-    page.locator("div").filter({ hasText: /^WORKER_USER_KEY$/ }),
+    page.getByText(/install-worker\.sh\?token=iwk_PLAYWR1/),
   ).toBeVisible();
 });
 

@@ -54,6 +54,22 @@ export type CreateGatewaySessionPayload = {
   traceId?: string;
 };
 
+function normalizeGatewayRequestError(
+  error: unknown,
+  gatewayBaseUrl: string,
+): Error {
+  if (
+    error instanceof TypeError &&
+    /failed to fetch|networkerror|load failed/i.test(error.message)
+  ) {
+    return new Error(
+      `无法连接 Gateway：${gatewayBaseUrl}\n请确认手机当前网络可以访问该地址，并且不要在真机环境中使用 localhost。`,
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 async function readJsonOrThrow<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
@@ -86,69 +102,93 @@ export function createGatewayManagementClient(
 
   return {
     async listWorkers(): Promise<GatewayWorker[]> {
-      const response = await fetch(`${apiBaseUrl}/workers`, {
-        headers: createHeaders(accessTokenProvider),
-      });
-      return readJsonOrThrow<GatewayWorker[]>(response);
+      try {
+        const response = await fetch(`${apiBaseUrl}/workers`, {
+          headers: createHeaders(accessTokenProvider),
+        });
+        return readJsonOrThrow<GatewayWorker[]>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, apiBaseUrl);
+      }
     },
 
     async listSessions(): Promise<GatewaySession[]> {
-      const response = await fetch(`${apiBaseUrl}/sessions`, {
-        headers: createHeaders(accessTokenProvider),
-      });
-      return readJsonOrThrow<GatewaySession[]>(response);
+      try {
+        const response = await fetch(`${apiBaseUrl}/sessions`, {
+          headers: createHeaders(accessTokenProvider),
+        });
+        return readJsonOrThrow<GatewaySession[]>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, apiBaseUrl);
+      }
     },
 
     async createSession(
       payload: CreateGatewaySessionPayload,
     ): Promise<GatewaySession> {
-      const response = await fetch(`${apiBaseUrl}/sessions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...createHeaders(accessTokenProvider),
-        },
-        body: JSON.stringify(payload),
-      });
+      try {
+        const response = await fetch(`${apiBaseUrl}/sessions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...createHeaders(accessTokenProvider),
+          },
+          body: JSON.stringify(payload),
+        });
 
-      return readJsonOrThrow<GatewaySession>(response);
+        return readJsonOrThrow<GatewaySession>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, apiBaseUrl);
+      }
     },
 
     async closeSession(sessionId: string): Promise<GatewaySession> {
-      const response = await fetch(
-        `${apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/close`,
-        {
-          method: "POST",
-          headers: createHeaders(accessTokenProvider),
-        },
-      );
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/close`,
+          {
+            method: "POST",
+            headers: createHeaders(accessTokenProvider),
+          },
+        );
 
-      return readJsonOrThrow<GatewaySession>(response);
+        return readJsonOrThrow<GatewaySession>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, apiBaseUrl);
+      }
     },
 
     async deleteWorker(workerId: string): Promise<void> {
-      const response = await fetch(
-        `${apiBaseUrl}/workers/${encodeURIComponent(workerId)}`,
-        {
-          method: "DELETE",
-          headers: createHeaders(accessTokenProvider),
-        },
-      );
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/workers/${encodeURIComponent(workerId)}`,
+          {
+            method: "DELETE",
+            headers: createHeaders(accessTokenProvider),
+          },
+        );
 
-      if (!response.ok) {
-        await readJsonOrThrow(response);
+        if (!response.ok) {
+          await readJsonOrThrow(response);
+        }
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, apiBaseUrl);
       }
     },
 
     async listAuditEntries(take = 100): Promise<GatewayAuditEntry[]> {
-      const response = await fetch(
-        `${apiBaseUrl}/audit?take=${encodeURIComponent(String(take))}`,
-        {
-          headers: createHeaders(accessTokenProvider),
-        },
-      );
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/audit?take=${encodeURIComponent(String(take))}`,
+          {
+            headers: createHeaders(accessTokenProvider),
+          },
+        );
 
-      return readJsonOrThrow<GatewayAuditEntry[]>(response);
+        return readJsonOrThrow<GatewayAuditEntry[]>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, apiBaseUrl);
+      }
     },
   };
 }

@@ -16,6 +16,7 @@ type AuditPageProps = {
   entries: GatewayAuditEntry[];
   isLoading: boolean;
   error: string | null;
+  onBack: () => void;
 };
 
 type AuditCategoryFilter = "all" | "session" | "worker" | "command";
@@ -39,7 +40,12 @@ function formatPayload(payloadJson: string) {
   }
 }
 
-export function AuditPage({ entries, isLoading, error }: AuditPageProps) {
+export function AuditPage({
+  entries,
+  isLoading,
+  error,
+  onBack,
+}: AuditPageProps) {
   const [categoryFilter, setCategoryFilter] =
     useState<AuditCategoryFilter>("all");
   const [keyword, setKeyword] = useState("");
@@ -75,7 +81,12 @@ export function AuditPage({ entries, isLoading, error }: AuditPageProps) {
   }, [categoryFilter, entries, keyword]);
 
   return (
-    <PageShell title="审计" subtitle="记录关键命令、会话事件与节点状态变化。">
+    <PageShell
+      title="审计"
+      subtitle="只看关键事件。"
+      onBack={onBack}
+      backLabel="back to settings"
+    >
       <div className="space-y-4">
         <Card>
           <CardContent className="space-y-3 p-4">
@@ -111,7 +122,7 @@ export function AuditPage({ entries, isLoading, error }: AuditPageProps) {
             </div>
 
             <div className="text-[11px] text-gray-500">
-              当前显示 {filteredEntries.length} / {entries.length} 条记录
+              {filteredEntries.length} / {entries.length} 条
             </div>
           </CardContent>
         </Card>
@@ -169,9 +180,14 @@ export function AuditPage({ entries, isLoading, error }: AuditPageProps) {
                       {entry.workerId && <span>worker: {entry.workerId}</span>}
                     </div>
                     {entry.payloadJson && (
-                      <pre className="mt-3 overflow-x-auto rounded-xl bg-[#0a0f12] px-3 py-2 font-mono text-[10px] text-gray-400 whitespace-pre-wrap break-all">
-                        {formatPayload(entry.payloadJson)}
-                      </pre>
+                      <details className="mt-3 rounded-xl bg-[#0a0f12] px-3 py-2">
+                        <summary className="cursor-pointer text-[11px] text-gray-400">
+                          查看原始 payload
+                        </summary>
+                        <pre className="mt-3 overflow-x-auto font-mono text-[10px] text-gray-400 whitespace-pre-wrap break-all">
+                          {formatPayload(entry.payloadJson)}
+                        </pre>
+                      </details>
                     )}
                   </div>
                 </div>

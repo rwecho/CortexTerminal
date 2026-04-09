@@ -20,6 +20,14 @@ type NativeBridgeResponse<T> = T & {
   error?: string;
 };
 
+function parseBridgeResponse<T>(payload: unknown): NativeBridgeResponse<T> {
+  if (typeof payload === "string") {
+    return JSON.parse(payload) as NativeBridgeResponse<T>;
+  }
+
+  return payload as NativeBridgeResponse<T>;
+}
+
 type BrowserRecorderState = {
   mediaRecorder: MediaRecorder;
   stream: MediaStream;
@@ -28,7 +36,13 @@ type BrowserRecorderState = {
 };
 
 type HybridWebViewApi = {
-  InvokeDotNet?: (methodName: string, ...args: unknown[]) => Promise<string>;
+  SendRawMessage?: (message: any) => void;
+  InvokeDotNet?: (methodName: any, paramValues?: any) => Promise<any>;
+  __InvokeJavaScript?: (
+    taskId: any,
+    methodName: any,
+    args: any,
+  ) => Promise<void>;
 };
 
 declare global {
@@ -54,7 +68,7 @@ async function invokeNative<T>(
   }
 
   const rawResponse = await invokeDotNet(methodName, ...args);
-  const response = JSON.parse(rawResponse) as NativeBridgeResponse<T>;
+  const response = parseBridgeResponse<T>(rawResponse);
 
   if (response.error) {
     throw new Error(response.error);

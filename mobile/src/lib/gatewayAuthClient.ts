@@ -30,6 +30,30 @@ export type WorkerRegistrationKey = {
   issuedAtUtc: string;
 };
 
+export type WorkerInstallToken = {
+  token: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  installUrl: string;
+  installCommand: string;
+};
+
+function normalizeGatewayRequestError(
+  error: unknown,
+  gatewayBaseUrl: string,
+): Error {
+  if (
+    error instanceof TypeError &&
+    /failed to fetch|networkerror|load failed/i.test(error.message)
+  ) {
+    return new Error(
+      `无法连接 Gateway：${gatewayBaseUrl}\n请确认手机当前网络可以访问该地址，并且不要在真机环境中使用 localhost。`,
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 function toFormBody(values: Record<string, string | undefined>): string {
   const params = new URLSearchParams();
 
@@ -81,55 +105,94 @@ export function createGatewayAuthClient(gatewayBaseUrl: string) {
       username: string,
       password: string,
     ): Promise<GatewayTokenResponse> {
-      const response = await fetch(`${normalizedBaseUrl}/connect/token`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: toFormBody({
-          grant_type: "password",
-          username,
-          password,
-          scope: "gateway.api relay.connect offline_access",
-        }),
-      });
+      try {
+        const response = await fetch(`${normalizedBaseUrl}/connect/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: toFormBody({
+            grant_type: "password",
+            username,
+            password,
+            scope: "gateway.api relay.connect offline_access",
+          }),
+        });
 
-      return readJsonOrThrow<GatewayTokenResponse>(response);
+        return readJsonOrThrow<GatewayTokenResponse>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, normalizedBaseUrl);
+      }
     },
 
     async register(payload: RegisterGatewayUserPayload): Promise<void> {
-      const response = await fetch(`${normalizedBaseUrl}/api/auth/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      try {
+        const response = await fetch(`${normalizedBaseUrl}/api/auth/register`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
 
-      await readJsonOrThrow(response);
+        await readJsonOrThrow(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, normalizedBaseUrl);
+      }
     },
 
     async me(accessToken: string): Promise<GatewayPrincipal> {
-      const response = await fetch(`${normalizedBaseUrl}/api/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      try {
+        const response = await fetch(`${normalizedBaseUrl}/api/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
 
-      return readJsonOrThrow<GatewayPrincipal>(response);
+        return readJsonOrThrow<GatewayPrincipal>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, normalizedBaseUrl);
+      }
     },
 
     async issueWorkerRegistrationKey(
       accessToken: string,
     ): Promise<WorkerRegistrationKey> {
-      const response = await fetch(`${normalizedBaseUrl}/api/auth/worker/key`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      try {
+        const response = await fetch(
+          `${normalizedBaseUrl}/api/auth/worker/key`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
 
-      return readJsonOrThrow<WorkerRegistrationKey>(response);
+        return readJsonOrThrow<WorkerRegistrationKey>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, normalizedBaseUrl);
+      }
+    },
+
+    async issueWorkerInstallToken(
+      accessToken: string,
+    ): Promise<WorkerInstallToken> {
+      try {
+        const response = await fetch(
+          `${normalizedBaseUrl}/api/auth/worker/install-token`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+
+        return readJsonOrThrow<WorkerInstallToken>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, normalizedBaseUrl);
+      }
     },
   };
 }

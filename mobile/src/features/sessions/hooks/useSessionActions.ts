@@ -155,6 +155,9 @@ export function useSessionActions() {
   const handleAuthFailure = useAuthFailureHandler();
   const navigate = useNavigate();
   const openSession = useOpenSessionAction();
+  const newSessionAgentFamily = useSessionsStore(
+    (state) => state.newSessionAgentFamily,
+  );
   const newSessionWorkerId = useSessionsStore(
     (state) => state.newSessionWorkerId,
   );

@@ -1,15 +1,18 @@
+using System.Text.Json;
 using CortexTerminal.MobileShell.Services;
 
 namespace CortexTerminal.MobileShell;
 
 public partial class MainPage : ContentPage
 {
+	private readonly NativeCapabilityBridge nativeCapabilityBridge;
 	private CancellationTokenSource? loadingTimeoutCts;
 	private bool isInitialized;
 
 	public MainPage(NativeCapabilityBridge nativeCapabilityBridge)
 	{
 		InitializeComponent();
+		this.nativeCapabilityBridge = nativeCapabilityBridge;
 		hybridWebView.SetInvokeJavaScriptTarget(nativeCapabilityBridge);
 	}
 
@@ -34,13 +37,57 @@ public partial class MainPage : ContentPage
 		base.OnDisappearing();
 	}
 
-	private async void OnHybridWebViewLoaded(object? sender, EventArgs e)
+	private void OnHybridWebViewLoaded(object? sender, EventArgs e)
 	{
-		loadingTimeoutCts?.Cancel();
-		statusMessageLabel.Text = "React terminal shell 已加载，正在进入工作台...";
-		await loadingOverlay.FadeToAsync(0, 220, Easing.Linear);
-		loadingOverlay.IsVisible = false;
-		loadingIndicator.IsRunning = false;
+		statusMessageLabel.Text = "React terminal shell 已加载，等待 web app 初始化...";
+	}
+
+	private async void OnHybridWebViewRawMessageReceived(object? sender, HybridWebViewRawMessageReceivedEventArgs e)
+	{
+		if (string.IsNullOrWhiteSpace(e.Message))
+		{
+			return;
+		}
+
+		try
+		{
+			using var document = JsonDocument.Parse(e.Message);
+			if (!document.RootElement.TryGetProperty("type", out var typeElement))
+			{
+				return;
+			}
+
+			var messageType = typeElement.GetString();
+
+			switch (messageType)
+			{
+				case "appInit":
+					await MainThread.InvokeOnMainThreadAsync(() =>
+					{
+						hybridWebView.SendRawMessage(JsonSerializer.Serialize(new
+						{
+							type = "initData",
+							payload = nativeCapabilityBridge.CreateStartupConfigSnapshot()
+						}));
+						statusMessageLabel.Text = "native startup config 已下发，等待 web app 就绪...";
+					});
+					break;
+				case "appReady":
+					await MainThread.InvokeOnMainThreadAsync(async () =>
+					{
+						loadingTimeoutCts?.Cancel();
+						statusMessageLabel.Text = "React terminal shell 已就绪，正在进入工作台...";
+						await loadingOverlay.FadeToAsync(0, 220, Easing.Linear);
+						loadingOverlay.IsVisible = false;
+						loadingIndicator.IsRunning = false;
+					});
+					break;
+			}
+		}
+		catch (JsonException)
+		{
+			// ignore malformed startup lifecycle messages
+		}
 	}
 
 	private void StartLoadingTimeout()

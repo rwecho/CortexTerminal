@@ -1,11 +1,20 @@
+import { useEffect, useState } from "react";
 import {
   Fingerprint,
+  Info,
   LogOut,
   ScrollText,
   ShieldCheck,
   User,
 } from "lucide-react";
 import type { GatewayPrincipal } from "../../lib/gatewayAuthClient";
+import { getAppVersionLabel } from "../app/config";
+import {
+  formatStartupVersionLabel,
+  getStartupConfig,
+  isNativeStartupFallback,
+  refreshStartupConfig,
+} from "../native/startup/nativeStartup";
 import { PageShell } from "../../components/layout/PageShell";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
@@ -23,8 +32,36 @@ export function SettingsPage({
   onOpenAudit,
   onSignOut,
 }: SettingsPageProps) {
+  const [versionLabel, setVersionLabel] = useState(() => getAppVersionLabel());
+  const [versionHint, setVersionHint] = useState<string | null>(() =>
+    isNativeStartupFallback(getStartupConfig())
+      ? "当前未收到 native startup config。"
+      : null,
+  );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    void refreshStartupConfig().then((config) => {
+      if (isCancelled) {
+        return;
+      }
+
+      setVersionLabel(formatStartupVersionLabel(config));
+      setVersionHint(
+        isNativeStartupFallback(config)
+          ? "当前未收到 native startup config。"
+          : null,
+      );
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   return (
-    <PageShell title="设置" subtitle="账户、安全、节点授权与审计入口统一收口。">
+    <PageShell title="设置" subtitle="账户与节点管理。">
       <div className="space-y-5">
         <Card>
           <CardContent className="p-5">
@@ -41,18 +78,8 @@ export function SettingsPage({
                 <div className="mt-1 break-all text-sm text-gray-400">
                   {currentPrincipal?.email ?? "No email configured"}
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="rounded-full border border-[#24313a] bg-[#0d1519] px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-cyan-300">
-                    subject · {currentPrincipal?.subject ?? "n/a"}
-                  </span>
-                  {currentPrincipal?.scopes.map((scope) => (
-                    <span
-                      key={scope}
-                      className="rounded-full border border-[#24313a] bg-[#0d1519] px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-gray-400"
-                    >
-                      {scope}
-                    </span>
-                  ))}
+                <div className="mt-3 text-[12px] text-gray-500">
+                  当前账号已登录，可直接管理 Worker 与审计记录。
                 </div>
               </div>
             </div>
@@ -66,9 +93,11 @@ export function SettingsPage({
                 <ShieldCheck size={18} />
               </div>
               <div>
-                <div className="text-sm font-semibold text-white">节点授权</div>
+                <div className="text-sm font-semibold text-white">
+                  Worker 节点
+                </div>
                 <div className="text-[11px] text-gray-500">
-                  管理 runner-style worker registration key。
+                  生成密钥并查看启动命令。
                 </div>
               </div>
             </div>
@@ -80,7 +109,7 @@ export function SettingsPage({
               className="w-full justify-start"
             >
               <Fingerprint size={18} className="text-cyan-400" />
-              Worker Runner Auth
+              创建 / 管理 Worker
             </Button>
 
             <Button
@@ -90,8 +119,29 @@ export function SettingsPage({
               className="w-full justify-start"
             >
               <ScrollText size={18} className="text-cyan-400" />
-              查看审计记录
+              查看审计
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-[#181818] p-3 text-cyan-400">
+                <Info size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-white">版本信息</div>
+                <div className="mt-1 text-[12px] text-gray-400">
+                  当前 App 版本：{versionLabel}
+                </div>
+                {versionHint ? (
+                  <div className="mt-1 text-[11px] text-amber-300/80">
+                    {versionHint}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </CardContent>
         </Card>
 

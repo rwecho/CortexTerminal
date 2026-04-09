@@ -8,35 +8,34 @@
         <HybridWebView x:Name="hybridWebView"
                        HybridRoot="wwwroot"
                        DefaultFile="index.html"
-                       Loaded="OnHybridWebViewLoaded"/>
+                       Loaded="OnHybridWebViewLoaded"
+                       RawMessageReceived="OnHybridWebViewRawMessageReceived"/>
 
         <Grid x:Name="loadingOverlay"
               BackgroundColor="#050505"
-              Padding="24"
-              RowDefinitions="Auto,Auto,Auto"
-              RowSpacing="12">
-            <ActivityIndicator x:Name="loadingIndicator"
-                               Grid.Row="0"
-                               IsRunning="True"
-                               HeightRequest="40"
-                               WidthRequest="40"
-                               Color="#06b6d4"
-                               HorizontalOptions="Center"
-                               VerticalOptions="End"/>
+              Padding="24">
+            <VerticalStackLayout Spacing="12"
+                                 HorizontalOptions="Center"
+                                 VerticalOptions="Center">
+                <ActivityIndicator x:Name="loadingIndicator"
+                                   IsRunning="True"
+                                   HeightRequest="40"
+                                   WidthRequest="40"
+                                   Color="#06b6d4"
+                                   HorizontalOptions="Center"/>
 
-            <Label Grid.Row="1"
-                   Text="Cortex Terminal"
-                   TextColor="White"
-                   FontAttributes="Bold"
-                   FontSize="22"
-                   HorizontalTextAlignment="Center"/>
+                <Label Text="Cortex Terminal"
+                       TextColor="White"
+                       FontAttributes="Bold"
+                       FontSize="22"
+                       HorizontalTextAlignment="Center"/>
 
-            <Label x:Name="statusMessageLabel"
-                   Grid.Row="2"
-                   Text="正在加载 MAUI native shell 中的 React terminal..."
-                   TextColor="#9ca3af"
-                   FontSize="13"
-                   HorizontalTextAlignment="Center"/>
+                <Label x:Name="statusMessageLabel"
+                       Text="正在加载 MAUI native shell 中的 React terminal..."
+                       TextColor="#9ca3af"
+                       FontSize="13"
+                       HorizontalTextAlignment="Center"/>
+            </VerticalStackLayout>
         </Grid>
     </Grid>
 

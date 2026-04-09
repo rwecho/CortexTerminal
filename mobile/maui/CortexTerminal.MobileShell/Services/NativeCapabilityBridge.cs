@@ -1,25 +1,40 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CommunityToolkit.Maui.Alerts;
 using CommunityToolkit.Maui.Core;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Plugin.Maui.Audio;
+using CortexTerminal.MobileShell.Options;
 using AudioEncoding = Plugin.Maui.Audio.Encoding;
 
 namespace CortexTerminal.MobileShell.Services;
 
-public sealed class NativeCapabilityBridge(IAudioManager audioManager, ILogger<NativeCapabilityBridge> logger)
+public sealed class NativeCapabilityBridge(
+    IAudioManager audioManager,
+    IOptions<StartupConfigOptions> startupConfigOptions,
+    ILogger<NativeCapabilityBridge> logger)
 {
     private sealed record AlertResult(bool Confirmed);
     private sealed record FilesResult(bool Cancelled, object[] Files);
     private sealed record AudioRecordingStartResult(bool Success, bool AlreadyRecording = false, string? FileName = null);
     private sealed record FilePayloadResult(string FileName, string ContentType, long Size, string Base64, long? DurationMs = null);
+    private sealed record StartupConfigPayload(
+        [property: JsonPropertyName("platform")] string Platform,
+        [property: JsonPropertyName("isNativeShell")] bool IsNativeShell,
+        [property: JsonPropertyName("useHashRouter")] bool UseHashRouter,
+        [property: JsonPropertyName("gatewayUrl")] string GatewayUrl,
+        [property: JsonPropertyName("appVersion")] string AppVersion,
+        [property: JsonPropertyName("appBuild")] string AppBuild);
 
     private readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = false
     };
+
+    private readonly StartupConfigOptions startupConfig = startupConfigOptions.Value;
 
     private IAudioRecorder? audioRecorder;
     private Stopwatch? recordingStopwatch;
@@ -87,6 +102,16 @@ public sealed class NativeCapabilityBridge(IAudioManager audioManager, ILogger<N
 
             return new FilesResult(false, payloads.ToArray());
         });
+    }
+
+    public Task<string> GetStartupConfigAsync()
+    {
+        return ExecuteSafeAsync(() => Task.FromResult(CreateStartupConfigPayload()));
+    }
+
+    public object CreateStartupConfigSnapshot()
+    {
+        return CreateStartupConfigPayload();
     }
 
     public Task<string> StartAudioRecordingAsync()
@@ -200,7 +225,7 @@ public sealed class NativeCapabilityBridge(IAudioManager audioManager, ILogger<N
 
     private static Page GetActivePage()
     {
-        var page = Application.Current?.Windows.FirstOrDefault()?.Page
+        var page = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault()?.Page
             ?? throw new InvalidOperationException("Unable to resolve the active page for the mobile shell.");
 
         while (true)
@@ -217,6 +242,20 @@ public sealed class NativeCapabilityBridge(IAudioManager audioManager, ILogger<N
                     return page;
             }
         }
+    }
+
+    private StartupConfigPayload CreateStartupConfigPayload()
+    {
+        var appVersion = AppInfo.Current.VersionString?.Trim();
+        var appBuild = AppInfo.Current.BuildString?.Trim();
+
+        return new StartupConfigPayload(
+            GetPlatformName(),
+            startupConfig.IsNativeShell,
+            startupConfig.UseHashRouter,
+            startupConfig.GatewayUrl,
+            string.IsNullOrWhiteSpace(appVersion) ? "unknown" : appVersion,
+            string.IsNullOrWhiteSpace(appBuild) ? "0" : appBuild);
     }
 
     private static async Task<FilePayloadResult> BuildFilePayloadAsync(FileResult fileResult)
@@ -271,6 +310,21 @@ public sealed class NativeCapabilityBridge(IAudioManager audioManager, ILogger<N
             ".pdf" => "application/pdf",
             _ => "application/octet-stream"
         };
+    }
+
+    private static string GetPlatformName()
+    {
+#if ANDROID
+        return "android";
+#elif IOS
+        return "ios";
+#elif MACCATALYST
+        return "maccatalyst";
+#elif WINDOWS
+        return "windows";
+#else
+        return "unknown";
+#endif
     }
 
     private static void TryDeleteFile(string filePath)

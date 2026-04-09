@@ -7,8 +7,6 @@ public static class WorkerRuntimeCatalog
     public static IReadOnlyList<string> AllAgentFamilies => KnownAgentFamilies;
 
     public static IReadOnlyList<string> ResolveSupportedAgentFamilies(
-        string workerModelName,
-        string workerRuntimeCommand,
         string? configuredSupportedAgentFamilies)
     {
         var configuredFamilies = configuredSupportedAgentFamilies?
@@ -24,30 +22,40 @@ public static class WorkerRuntimeCatalog
             return configuredFamilies;
         }
 
-        return KnownAgentFamilies;
+        var detectedFamilies = DetectInstalledAgentFamilies().ToArray();
+        return detectedFamilies.Length > 0 ? detectedFamilies : ["claude"];
     }
 
-    public static string ResolveDefaultRuntimeCommand(string workerModelName, string? configuredCommand)
+    public static string ResolveDefaultRuntimeCommand(
+        IReadOnlyList<string> supportedAgentFamilies,
+        string? configuredCommand,
+        string? workerModelName = null)
     {
         if (!string.IsNullOrWhiteSpace(configuredCommand))
         {
             return configuredCommand.Trim();
         }
 
-        var normalizedModelName = workerModelName.Trim().ToLowerInvariant();
-        if (normalizedModelName.Contains("codex"))
+        var normalizedModelName = workerModelName?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(normalizedModelName) && normalizedModelName.Contains("codex"))
         {
             return "codex";
         }
 
-        if (normalizedModelName.Contains("gemini"))
+        if (!string.IsNullOrWhiteSpace(normalizedModelName) && normalizedModelName.Contains("gemini"))
         {
             return "gemini";
         }
 
-        if (normalizedModelName.Contains("opencode") || normalizedModelName.Contains("open code"))
+        if (!string.IsNullOrWhiteSpace(normalizedModelName)
+            && (normalizedModelName.Contains("opencode") || normalizedModelName.Contains("open code")))
         {
             return "opencode";
+        }
+
+        if (supportedAgentFamilies.Count > 0)
+        {
+            return supportedAgentFamilies[0];
         }
 
         return "claude";
@@ -87,6 +95,31 @@ public static class WorkerRuntimeCatalog
             ?? "claude";
     }
 
+    public static string ResolveWorkerModelName(
+        string? configuredWorkerModelName,
+        IReadOnlyList<string> supportedAgentFamilies,
+        string defaultRuntimeCommand)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredWorkerModelName))
+        {
+            return configuredWorkerModelName.Trim();
+        }
+
+        return supportedAgentFamilies.Count switch
+        {
+            0 => $"{defaultRuntimeCommand} runtime",
+            1 => $"{supportedAgentFamilies[0]} runtime",
+            _ => $"Multi-runtime worker ({string.Join(", ", supportedAgentFamilies)})"
+        };
+    }
+
+    public static IReadOnlyList<string> DetectInstalledAgentFamilies()
+    {
+        return KnownAgentFamilies
+            .Where(IsCommandAvailable)
+            .ToArray();
+    }
+
     private static string? NormalizeAgentFamily(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -109,5 +142,47 @@ public static class WorkerRuntimeCatalog
                     : normalized.Contains("claude", StringComparison.Ordinal)
                         ? "claude"
                         : null;
+    }
+
+    private static bool IsCommandAvailable(string candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return false;
+        }
+
+        var pathValue = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(pathValue))
+        {
+            return false;
+        }
+
+        var pathExtensions = OperatingSystem.IsWindows()
+            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT;.PS1")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : [string.Empty];
+
+        foreach (var pathSegment in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var basePath = Path.Combine(pathSegment, candidate);
+            if (File.Exists(basePath))
+            {
+                return true;
+            }
+
+            foreach (var extension in pathExtensions)
+            {
+                var candidatePath = string.IsNullOrWhiteSpace(extension) || basePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
+                    ? basePath
+                    : basePath + extension;
+
+                if (File.Exists(candidatePath))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

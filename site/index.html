@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cortex Terminal</title>
+    <meta
+      name="description"
+      content="Cortex Terminal 是一个 relay-centric AI terminal mesh，用统一网关调度 Claude、Codex、Gemini、OpenCode 等 AI Agent。"
+    />
+    <link rel="stylesheet" href="./assets/site.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <nav class="topbar">
+          <div class="brand">
+            <span class="brand-mark">CT</span>
+            <span class="brand-name">Cortex Terminal</span>
+          </div>
+          <div class="topbar-links">
+            <a href="#architecture">架构</a>
+            <a href="#features">特性</a>
+            <a href="#worker">Worker</a>
+            <a href="#legal">Store 页面</a>
+          </div>
+        </nav>
+
+        <section class="hero-content">
+          <div class="hero-copy">
+            <span class="eyebrow">Secure AI Terminal Mesh</span>
+            <h1>让 AI terminal 真正进入可控、可审计、可重连的生产形态</h1>
+            <p class="hero-description">
+              Cortex Terminal 采用 relay-centric 架构，把
+              Mobile、Gateway、Worker 串成一个统一的 AI terminal mesh。
+              所有终端流量经中心网关中继，保留会话治理、审计与 reconnect
+              能力，同时不改变 CLI agent 的真实交互体验。
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="#worker">查看 Worker 接入</a>
+              <a
+                class="button secondary"
+                href="https://github.com/rwecho/CortexTerminal"
+                >查看仓库</a
+              >
+            </div>
+            <div class="hero-badges">
+              <span>.NET 10</span>
+              <span>MAUI Hybrid</span>
+              <span>React 19</span>
+              <span>SignalR</span>
+              <span>xterm.js</span>
+            </div>
+          </div>
+
+          <div class="hero-panel">
+            <div class="terminal-card">
+              <div class="terminal-card-header">
+                <span></span><span></span><span></span>
+              </div>
+              <pre class="terminal-card-body">
+$ cortex session start
+[relay] gateway online
+[worker] multi-runtime ready
+[agent] claude / codex / gemini / opencode
+[audit] session trace attached
+[status] reconnect-safe terminal attached</pre
+              >
+            </div>
+          </div>
+        </section>
+      </header>
+
+      <main>
+        <section id="architecture" class="section">
+          <div class="section-heading">
+            <span class="eyebrow">Architecture</span>
+            <h2>三段式架构，强制中继，不走野路子</h2>
+            <p>
+              Mobile 发起会话，Gateway 做身份与路由治理，Worker 托管真实 AI CLI
+              进程。 整个系统围绕 Session continuity、Auditability、E2EE
+              assumptions 构建。
+            </p>
+          </div>
+
+          <div class="architecture-grid">
+            <article class="info-card">
+              <h3>Mobile Client</h3>
+              <p>
+                MAUI Hybrid + React + xterm.js，负责 session 发起、terminal UI
+                与移动端体验。
+              </p>
+            </article>
+            <article class="info-card accent">
+              <h3>Gateway Relay</h3>
+              <p>
+                ASP.NET Core 10 + SignalR + PostgreSQL + Redis，负责
+                auth、session mapping、audit 与 binary relay。
+              </p>
+            </article>
+            <article class="info-card">
+              <h3>Worker Node</h3>
+              <p>
+                Worker hosts AI CLI runtimes，负责 PTY lifecycle、session
+                orchestration、ring buffer 与 reconnect snapshot。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="features" class="section">
+          <div class="section-heading">
+            <span class="eyebrow">Capabilities</span>
+            <h2>
+              不是 demo terminal，而是 product-grade terminal control plane
+            </h2>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>统一调度 Multi-runtime</h3>
+              <p>
+                一个 worker 可按 session 的 agent family 调度不同 CLI
+                runtime，而不是把节点锁死成单一模型。
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>可审计会话链路</h3>
+              <p>
+                gateway 维护 session / worker / trace 视角的完整治理信息，便于
+                operator 与团队回溯。
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>断线重连友好</h3>
+              <p>
+                ring buffer + snapshot
+                设计确保移动端重连时不会轻易丢失上下文，终端状态可恢复。
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>保留原生 CLI 交互</h3>
+              <p>
+                PTY 层保留进度条、确认框、ANSI output
+                与真实交互，而不是阉割成“聊天框模拟器”。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="worker" class="section worker-section">
+          <div class="section-heading">
+            <span class="eyebrow">Worker Onboarding</span>
+            <h2>短 install token + 一条命令接入 Worker</h2>
+            <p>
+              在 mobile 里生成短期 install token
+              后，直接复制下面这一条命令到你的电脑执行。 脚本会自动下载 worker
+              release、写默认配置、向 gateway 换取 registration key，并启动首个
+              worker。
+            </p>
+          </div>
+
+          <div class="command-card">
+            <div class="command-label">One-liner</div>
+            <code
+              >curl -fsSL
+              'https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_xxxxxxxx'
+              | bash</code
+            >
+          </div>
+
+          <div class="worker-notes">
+            <div>
+              <h3>为什么是短 token？</h3>
+              <p>
+                它是一次性 install token，不是长期 access
+                token。短期、一次性、服务端存状态，既更安全也更适合复制粘贴。
+              </p>
+            </div>
+            <div>
+              <h3>为什么不手填 runtime？</h3>
+              <p>
+                worker 会优先按显式配置读取；没有配置时，自动探测本机已安装的
+                Claude、Codex、Gemini、OpenCode CLI。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="legal" class="section">
+          <div class="section-heading">
+            <span class="eyebrow">App Store / Google Play</span>
+            <h2>用于上架审核的法律与支持页面，单独可访问</h2>
+            <p>
+              为了满足 App Store Connect 与 Google Play Console
+              的常见资料要求，站点额外提供独立的隐私政策、服务条款、支持与账号删除说明页面。
+              这些页面可以直接作为 store listing 里的 Privacy Policy
+              URL、Support URL 与 Account Deletion URL 使用。
+            </p>
+          </div>
+
+          <div class="feature-grid legal-grid">
+            <article class="feature-card legal-link-card">
+              <h3><a href="./privacy/">Privacy Policy</a></h3>
+              <p>
+                说明数据收集范围、用途、安全措施、第三方服务与用户权利，适合作为
+                Apple / Google 审核入口。
+              </p>
+            </article>
+            <article class="feature-card legal-link-card">
+              <h3><a href="./terms/">Terms of Service</a></h3>
+              <p>
+                定义服务使用边界、账号责任、可接受使用规则、可用性与免责声明。
+              </p>
+            </article>
+            <article class="feature-card legal-link-card">
+              <h3><a href="./support/">Support</a></h3>
+              <p>
+                提供联系渠道、支持范围、提交问题建议与 store 审核可用的 Support
+                URL。
+              </p>
+            </article>
+            <article class="feature-card legal-link-card">
+              <h3><a href="./account-deletion/">Account Deletion</a></h3>
+              <p>
+                说明如何申请删除账号与相关数据，满足应用商店对删除路径可见性的常见要求。
+              </p>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div>
+          <strong>Cortex Terminal</strong>
+          <span>Relay-centric AI terminal mesh</span>
+        </div>
+        <div class="footer-links">
+          <a href="./privacy/">Privacy</a>
+          <a href="./terms/">Terms</a>
+          <a href="./support/">Support</a>
+          <a href="./account-deletion/">Account Deletion</a>
+          <a href="https://github.com/rwecho/CortexTerminal"
+            >GitHub Repository</a
+          >
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

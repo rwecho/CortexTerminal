@@ -50,6 +50,7 @@ export function NewSessionRoute() {
       isCreatingSession={isCreatingSession}
       managementError={managementError}
       onBack={() => navigate(buildAppPath("home"))}
+      onOpenWorkerGuide={() => navigate(buildAppPath("workerAuth"))}
       onAgentFamilyChange={setNewSessionAgentFamily}
       onWorkerChange={setNewSessionWorkerId}
       onPathChange={setNewSessionPath}

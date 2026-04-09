@@ -26,31 +26,39 @@ public sealed class WorkerRuntimeCatalogTests
     public void ResolveSupportedAgentFamilies_UsesConfiguredFamiliesWhenProvided()
     {
         var supportedAgentFamilies = WorkerRuntimeCatalog.ResolveSupportedAgentFamilies(
-            "Claude CLI",
-            "claude",
             "claude, codex, opencode");
 
         Assert.Equal(["claude", "codex", "opencode"], supportedAgentFamilies);
     }
 
     [Fact]
-    public void ResolveSupportedAgentFamilies_WithoutConfiguration_DefaultsToAllKnownFamilies()
+    public void ResolveSupportedAgentFamilies_WithoutConfiguration_ReturnsDetectedOrFallbackFamilies()
     {
         var supportedAgentFamilies = WorkerRuntimeCatalog.ResolveSupportedAgentFamilies(
-            "Claude CLI",
-            "claude",
             null);
 
-        Assert.Equal(["claude", "codex", "gemini", "opencode"], supportedAgentFamilies);
+        Assert.NotEmpty(supportedAgentFamilies);
     }
 
     [Fact]
     public void ResolveDefaultRuntimeCommand_InfersFromModelName()
     {
         var runtimeCommand = WorkerRuntimeCatalog.ResolveDefaultRuntimeCommand(
-            "Gemini CLI",
-            null);
+            ["claude", "gemini"],
+            null,
+            "Gemini CLI");
 
         Assert.Equal("gemini", runtimeCommand);
+    }
+
+    [Fact]
+    public void ResolveWorkerModelName_WithMultipleFamilies_ReturnsMultiRuntimeLabel()
+    {
+        var workerModelName = WorkerRuntimeCatalog.ResolveWorkerModelName(
+            null,
+            ["claude", "codex"],
+            "claude");
+
+        Assert.Equal("Multi-runtime worker (claude, codex)", workerModelName);
     }
 }

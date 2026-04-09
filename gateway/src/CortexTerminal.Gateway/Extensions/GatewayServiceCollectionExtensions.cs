@@ -45,6 +45,7 @@ public static class GatewayServiceCollectionExtensions
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
         services.AddScoped<IAuditTrailService, DatabaseAuditTrailService>();
         services.AddScoped<IWorkerRegistrationKeyService, WorkerRegistrationKeyService>();
+        services.AddScoped<IWorkerInstallTokenService, WorkerInstallTokenService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<ISessionManagementService, SessionManagementService>();
         services.AddScoped<IWorkerManagementService, WorkerManagementService>();

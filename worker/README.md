@@ -34,6 +34,11 @@
 
 ## 打包与安装 Package + install
 
+- Gateway one-liner install（推荐）:
+  - 登录 mobile 后生成 install command
+  - 在电脑执行：`curl -fsSL 'https://<gateway>/install-worker.sh?token=<iwk_token>' | bash`
+  - 脚本会下载最新 worker release、写默认 `worker.env`、并直接启动 worker
+
 - GitHub Actions:
   - `.github/workflows/worker-package.yml` 会产出 `linux-x64`、`osx-arm64`、`win-x64` 三个平台安装包。
 - 安装包内容：

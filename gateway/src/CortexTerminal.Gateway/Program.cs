@@ -62,6 +62,7 @@ app.MapGet("/health", () => Results.Ok(new
     management = "/api"
 }));
 app.MapGatewayAuthEndpoints();
+app.MapGatewayWorkerInstallEndpoints();
 app.MapGatewayManagementEndpoints();
 app.MapHub<ManagementHub>("/hubs/management").RequireAuthorization("GatewayUser");
 app.MapHub<RelayHub>("/hubs/relay").RequireAuthorization();

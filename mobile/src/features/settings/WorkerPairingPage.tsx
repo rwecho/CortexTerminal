@@ -4,26 +4,32 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 
 type WorkerPairingPageProps = {
-  workerRegistrationKey: string | null;
-  workerRegistrationKeyIssuedAtUtc: string | null;
-  workerRegistrationKeyError: string | null;
-  isIssuingWorkerRegistrationKey: boolean;
+  workerInstallToken: string | null;
+  workerInstallCommand: string | null;
+  workerInstallUrl: string | null;
+  workerInstallIssuedAtUtc: string | null;
+  workerInstallExpiresAtUtc: string | null;
+  workerInstallError: string | null;
+  isIssuingWorkerInstallToken: boolean;
   onBack: () => void;
-  onIssueWorkerRegistrationKey: () => void | Promise<void>;
+  onIssueWorkerInstallToken: () => void | Promise<void>;
 };
 
 export function WorkerPairingPage({
-  workerRegistrationKey,
-  workerRegistrationKeyIssuedAtUtc,
-  workerRegistrationKeyError,
-  isIssuingWorkerRegistrationKey,
+  workerInstallToken,
+  workerInstallCommand,
+  workerInstallUrl,
+  workerInstallIssuedAtUtc,
+  workerInstallExpiresAtUtc,
+  workerInstallError,
+  isIssuingWorkerInstallToken,
   onBack,
-  onIssueWorkerRegistrationKey,
+  onIssueWorkerInstallToken,
 }: WorkerPairingPageProps) {
   return (
     <PageShell
-      title="Worker Runner Auth"
-      subtitle="仅保留 runner auth model：为当前用户生成 worker registration key，并通过 WORKER_USER_KEY 启动节点。"
+      title="创建 Worker"
+      subtitle="生成短期 install token，然后在电脑上执行一条命令完成安装与首次启动。"
       onBack={onBack}
       backLabel="back to settings"
     >
@@ -37,57 +43,80 @@ export function WorkerPairingPage({
               <div className="min-w-0 flex-1 space-y-4">
                 <div>
                   <div className="text-sm font-semibold text-white">
-                    Worker registration key
+                    Worker Install Token
                   </div>
                   <div className="mt-1 text-[11px] text-gray-500">
-                    将该 key 配置到 worker 的 <code>WORKER_USER_KEY</code>{" "}
-                    后，节点启动时即可自动换取 access token 并重新注册上线。
+                    生成一次性短 token。电脑端执行命令后，gateway
+                    会自动签发真正的 worker registration key。
                   </div>
                 </div>
 
                 <Button
                   type="button"
                   onClick={() => {
-                    void onIssueWorkerRegistrationKey();
+                    void onIssueWorkerInstallToken();
                   }}
-                  disabled={isIssuingWorkerRegistrationKey}
+                  disabled={isIssuingWorkerInstallToken}
                   className="w-full"
                 >
-                  {isIssuingWorkerRegistrationKey
+                  {isIssuingWorkerInstallToken
                     ? "生成中..."
-                    : workerRegistrationKey
-                      ? "重新生成 Worker Key"
-                      : "生成 Worker Key"}
+                    : workerInstallCommand
+                      ? "重新生成安装命令"
+                      : "生成安装命令"}
                 </Button>
 
-                {workerRegistrationKey && (
+                {workerInstallToken && (
                   <div className="space-y-2 rounded-2xl border border-[#24313a] bg-[#111315] p-3">
                     <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500">
-                      WORKER_USER_KEY
+                      INSTALL TOKEN
                     </div>
                     <div className="break-all font-mono text-sm text-emerald-200">
-                      {workerRegistrationKey}
+                      {workerInstallToken}
                     </div>
-                    {workerRegistrationKeyIssuedAtUtc && (
-                      <div className="text-[11px] text-gray-500">
-                        Issued at{" "}
-                        {new Date(
-                          workerRegistrationKeyIssuedAtUtc,
-                        ).toLocaleString()}
+                    <div className="space-y-1 text-[11px] text-gray-500">
+                      {workerInstallIssuedAtUtc && (
+                        <div>
+                          生成时间{" "}
+                          {new Date(workerInstallIssuedAtUtc).toLocaleString()}
+                        </div>
+                      )}
+                      {workerInstallExpiresAtUtc && (
+                        <div>
+                          过期时间{" "}
+                          {new Date(workerInstallExpiresAtUtc).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {workerInstallError && (
+                  <div className="rounded-xl border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
+                    {workerInstallError}
+                  </div>
+                )}
+
+                {workerInstallCommand && (
+                  <div className="space-y-2 rounded-2xl border border-[#24313a] bg-[#0d1519] p-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500">
+                      一键安装命令
+                    </div>
+                    <div className="text-[11px] leading-5 text-gray-400">
+                      在电脑终端执行下面这一行。脚本会自动下载
+                      worker、写默认配置、换取 registration key，并直接启动首个
+                      worker 进程。
+                    </div>
+                    <pre className="overflow-x-auto rounded-xl bg-[#111315] px-3 py-3 font-mono text-[11px] text-cyan-200 whitespace-pre-wrap break-all">
+                      {workerInstallCommand}
+                    </pre>
+                    {workerInstallUrl && (
+                      <div className="text-[11px] leading-5 text-gray-500 break-all">
+                        install url: {workerInstallUrl}
                       </div>
                     )}
                   </div>
                 )}
-
-                {workerRegistrationKeyError && (
-                  <div className="rounded-xl border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
-                    {workerRegistrationKeyError}
-                  </div>
-                )}
-                <div className="rounded-2xl border border-[#24313a] bg-[#0d1519] px-3 py-3 text-[11px] leading-5 text-gray-400">
-                  建议在 worker 的启动环境中设置：<code>WORKER_USER_KEY</code>、
-                  <code>WORKER_ID</code>、<code>WORKER_DISPLAY_NAME</code>。
-                </div>
               </div>
             </div>
           </CardContent>

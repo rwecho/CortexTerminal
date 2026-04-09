@@ -1,7 +1,10 @@
 using CommunityToolkit.Maui;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Plugin.Maui.Audio;
 using CortexTerminal.MobileShell.Services;
+using CortexTerminal.MobileShell.Options;
+using System.Reflection;
 
 namespace CortexTerminal.MobileShell;
 
@@ -10,6 +13,8 @@ public static class MauiProgram
 	public static MauiApp CreateMauiApp()
 	{
 		var builder = MauiApp.CreateBuilder();
+		ConfigureAppSettings(builder);
+
 		builder
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit()
@@ -27,6 +32,10 @@ public static class MauiProgram
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
 			});
 
+		builder.Services
+			.AddOptions<StartupConfigOptions>()
+			.Bind(builder.Configuration.GetSection(StartupConfigOptions.SectionName));
+
 		builder.Services.AddSingleton<MainPage>();
 		builder.Services.AddSingleton<AppShell>();
 		builder.Services.AddSingleton<NativeCapabilityBridge>();
@@ -37,5 +46,15 @@ public static class MauiProgram
 #endif
 
 		return builder.Build();
+	}
+
+	private static void ConfigureAppSettings(MauiAppBuilder builder)
+	{
+		using var appSettingsStream = Assembly
+			.GetExecutingAssembly()
+			.GetManifestResourceStream("CortexTerminal.MobileShell.appsettings.json")
+			?? throw new InvalidOperationException("Unable to load CortexTerminal.MobileShell appsettings.json.");
+
+		builder.Configuration.AddJsonStream(appSettingsStream);
 	}
 }

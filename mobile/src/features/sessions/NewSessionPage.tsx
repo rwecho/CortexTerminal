@@ -34,6 +34,7 @@ type NewSessionPageProps = {
   isCreatingSession: boolean;
   managementError: string | null;
   onBack: () => void;
+  onOpenWorkerGuide: () => void;
   onAgentFamilyChange: (value: AgentFamily) => void;
   onWorkerChange: (value: string) => void;
   onPathChange: (value: string) => void;
@@ -51,6 +52,7 @@ export function NewSessionPage({
   isCreatingSession,
   managementError,
   onBack,
+  onOpenWorkerGuide,
   onAgentFamilyChange,
   onWorkerChange,
   onPathChange,
@@ -70,7 +72,7 @@ export function NewSessionPage({
   return (
     <PageShell
       title="创建会话"
-      subtitle="先选执行节点，再选择本次会话要使用的 runtime 和工作目录；如节点未安装对应 CLI，可后续补装。"
+      subtitle="选节点、选 runtime、选目录，然后进入终端。"
       onBack={onBack}
       backLabel="back to home"
       headerAccessory={
@@ -89,11 +91,25 @@ export function NewSessionPage({
         <Card>
           <CardHeader>
             <CardTitle>会话配置</CardTitle>
-            <CardDescription>
-              仅保留创建会话所需的信息，避免无效步骤。
-            </CardDescription>
+            <CardDescription>只保留真正需要填写的内容。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
+            <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-4 py-3 text-sm text-gray-300">
+              <div className="font-medium text-white">没有节点？</div>
+              <div className="mt-1 text-[12px] text-gray-400">
+                先生成安装命令，然后在电脑上执行一行 install-worker.sh
+                即可接入。
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onOpenWorkerGuide}
+                className="mt-3"
+              >
+                去创建 Worker
+              </Button>
+            </div>
+
             <label className="space-y-2 text-[11px] text-gray-400">
               <span>执行节点</span>
               {onlineWorkers.length > 0 ? (
@@ -121,9 +137,8 @@ export function NewSessionPage({
                   </SelectContent>
                 </Select>
               ) : (
-                <div className="text-xs text-gray-500">
-                  当前没有可用节点，请先在设置中生成 Worker
-                  Key，并确认节点已经启动且在线。
+                <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-3 py-3 text-sm text-gray-500">
+                  当前没有在线节点。
                 </div>
               )}
             </label>
@@ -132,18 +147,17 @@ export function NewSessionPage({
               <div className="rounded-2xl border border-amber-900/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
                 <div className="flex items-start gap-2">
                   <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                  <div>
-                    请先选择一个在线 worker，然后再选择本次会话要使用的
-                    runtime。
-                  </div>
+                  <div>先选一个在线 worker，再选 runtime。</div>
                 </div>
               </div>
             )}
 
             {selectedWorker && (
               <div className="rounded-2xl border border-cyan-900/30 bg-cyan-950/10 px-4 py-3 text-sm text-cyan-100">
-                当前默认允许该 worker 创建任意 runtime 会话；若节点尚未安装对应
-                CLI，可在节点侧补装后继续使用。
+                当前节点支持：
+                {selectedWorkerAgentFamilies
+                  .map((agentFamily) => getAgentLabel(agentFamily))
+                  .join(" / ")}
               </div>
             )}
 
@@ -165,41 +179,33 @@ export function NewSessionPage({
                         <div className="w-full wrap-break-word text-sm font-semibold">
                           {getAgentLabel(agentFamily)}
                         </div>
-                        <div className="mt-2 w-full wrap-break-word text-[11px] font-normal leading-5 text-cyan-200/80">
-                          选择本次会话运行的 CLI；如节点尚未安装，可后续补装。
-                        </div>
                       </Button>
                     );
                   })}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-3 py-3 text-sm text-gray-500">
-                  请选择执行节点后再选择 runtime。
+                  请先选择执行节点。
                 </div>
               )}
             </label>
 
-            <Card className="border-[#1f2a30] bg-[#0a0f12]">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-gray-500">
-                  <Server size={14} /> 节点摘要
-                </div>
-                <div className="mt-2 wrap-break-word text-sm font-semibold text-white">
-                  {selectedWorker?.displayName ?? "未选择执行节点"}
-                </div>
-                <div className="mt-1 wrap-break-word text-sm text-gray-400">
-                  {selectedWorker?.modelName ??
-                    `${getAgentLabel(selectedAgentFamily)} 节点未接入`}
-                </div>
-                <div className="mt-2 wrap-break-word text-xs text-cyan-300/80">
-                  {selectedWorker
-                    ? `可选：${availableAgentFamilies
-                        .map((agentFamily) => getAgentLabel(agentFamily))
-                        .join(" / ")}`
-                    : "请选择一个节点查看可选 runtime。"}
-                </div>
-              </CardContent>
-            </Card>
+            {selectedWorker && (
+              <Card className="border-[#1f2a30] bg-[#0a0f12]">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-gray-500">
+                    <Server size={14} /> 当前节点
+                  </div>
+                  <div className="mt-2 wrap-break-word text-sm font-semibold text-white">
+                    {selectedWorker.displayName}
+                  </div>
+                  <div className="mt-1 wrap-break-word text-sm text-gray-400">
+                    {selectedWorker.modelName ??
+                      getAgentLabel(selectedAgentFamily)}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <label className="space-y-1 text-[11px] text-gray-400">
               <span>工作目录</span>
@@ -236,6 +242,9 @@ export function NewSessionPage({
 
             <label className="space-y-1 text-[11px] text-gray-400">
               <span>会话名称</span>
+              <div className="text-[11px] text-gray-500">
+                可选，不填会自动用目录名。
+              </div>
               <Input
                 type="text"
                 value={sessionDisplayName}

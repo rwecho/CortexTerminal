@@ -29,7 +29,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
+		<MauiIcon Include="Resources\AppIcon\appicon.svg" Color="#0A0A0A" />
 		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#050505" BaseSize="128,128" />
 		<MauiImage Include="Resources\Images\*" />
 		<MauiImage Update="Resources\Images\dotnet_bot.png" Resize="True" BaseSize="300,185" />
@@ -38,8 +38,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<EmbeddedResource Include="appsettings.json" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.41" />
+		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
 		<PackageReference Include="CommunityToolkit.Maui" Version="14.1.0" />
 		<PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
 	</ItemGroup>

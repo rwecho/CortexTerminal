@@ -6,28 +6,40 @@ import { buildAppPath } from "../../app/routeUtils";
 
 export function WorkerPairingRoute() {
   const navigate = useNavigate();
-  const workerRegistrationKey = useWorkerPairingStore(
-    (state) => state.workerRegistrationKey,
+  const workerInstallToken = useWorkerPairingStore(
+    (state) => state.workerInstallToken,
   );
-  const workerRegistrationKeyIssuedAtUtc = useWorkerPairingStore(
-    (state) => state.workerRegistrationKeyIssuedAtUtc,
+  const workerInstallCommand = useWorkerPairingStore(
+    (state) => state.workerInstallCommand,
   );
-  const workerRegistrationKeyError = useWorkerPairingStore(
-    (state) => state.workerRegistrationKeyError,
+  const workerInstallUrl = useWorkerPairingStore(
+    (state) => state.workerInstallUrl,
   );
-  const isIssuingWorkerRegistrationKey = useWorkerPairingStore(
-    (state) => state.isIssuingWorkerRegistrationKey,
+  const workerInstallIssuedAtUtc = useWorkerPairingStore(
+    (state) => state.workerInstallIssuedAtUtc,
   );
-  const { handleIssueWorkerRegistrationKey } = useWorkerPairingActions();
+  const workerInstallExpiresAtUtc = useWorkerPairingStore(
+    (state) => state.workerInstallExpiresAtUtc,
+  );
+  const workerInstallError = useWorkerPairingStore(
+    (state) => state.workerInstallError,
+  );
+  const isIssuingWorkerInstallToken = useWorkerPairingStore(
+    (state) => state.isIssuingWorkerInstallToken,
+  );
+  const { handleIssueWorkerInstallToken } = useWorkerPairingActions();
 
   return (
     <WorkerPairingPage
-      workerRegistrationKey={workerRegistrationKey}
-      workerRegistrationKeyIssuedAtUtc={workerRegistrationKeyIssuedAtUtc}
-      workerRegistrationKeyError={workerRegistrationKeyError}
-      isIssuingWorkerRegistrationKey={isIssuingWorkerRegistrationKey}
+      workerInstallToken={workerInstallToken}
+      workerInstallCommand={workerInstallCommand}
+      workerInstallUrl={workerInstallUrl}
+      workerInstallIssuedAtUtc={workerInstallIssuedAtUtc}
+      workerInstallExpiresAtUtc={workerInstallExpiresAtUtc}
+      workerInstallError={workerInstallError}
+      isIssuingWorkerInstallToken={isIssuingWorkerInstallToken}
       onBack={() => navigate(buildAppPath("settings"))}
-      onIssueWorkerRegistrationKey={handleIssueWorkerRegistrationKey}
+      onIssueWorkerInstallToken={handleIssueWorkerInstallToken}
     />
   );
 }

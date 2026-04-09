@@ -7,53 +7,66 @@ import { useWorkerPairingStore } from "../store/useWorkerPairingStore";
 
 export function useWorkerPairingActions() {
   const accessToken = useAuthStore((state) => state.accessToken);
-  const setWorkerRegistrationKey = useWorkerPairingStore(
-    (state) => state.setWorkerRegistrationKey,
+  const setWorkerInstallToken = useWorkerPairingStore(
+    (state) => state.setWorkerInstallToken,
   );
-  const setWorkerRegistrationKeyIssuedAtUtc = useWorkerPairingStore(
-    (state) => state.setWorkerRegistrationKeyIssuedAtUtc,
+  const setWorkerInstallCommand = useWorkerPairingStore(
+    (state) => state.setWorkerInstallCommand,
   );
-  const setWorkerRegistrationKeyError = useWorkerPairingStore(
-    (state) => state.setWorkerRegistrationKeyError,
+  const setWorkerInstallUrl = useWorkerPairingStore(
+    (state) => state.setWorkerInstallUrl,
   );
-  const setIsIssuingWorkerRegistrationKey = useWorkerPairingStore(
-    (state) => state.setIsIssuingWorkerRegistrationKey,
+  const setWorkerInstallIssuedAtUtc = useWorkerPairingStore(
+    (state) => state.setWorkerInstallIssuedAtUtc,
+  );
+  const setWorkerInstallExpiresAtUtc = useWorkerPairingStore(
+    (state) => state.setWorkerInstallExpiresAtUtc,
+  );
+  const setWorkerInstallError = useWorkerPairingStore(
+    (state) => state.setWorkerInstallError,
+  );
+  const setIsIssuingWorkerInstallToken = useWorkerPairingStore(
+    (state) => state.setIsIssuingWorkerInstallToken,
   );
   const handleAuthFailure = useAuthFailureHandler();
   const authClient = useMemo(() => createGatewayAuthClient(gatewayUrl), []);
 
-  const handleIssueWorkerRegistrationKey = useCallback(async () => {
+  const handleIssueWorkerInstallToken = useCallback(async () => {
     if (!accessToken) {
-      setWorkerRegistrationKeyError(
-        "当前登录态已失效，请重新登录后再生成 worker key。",
-      );
+      setWorkerInstallError("当前登录态已失效，请重新登录后再生成安装命令。");
       return;
     }
 
     try {
-      setIsIssuingWorkerRegistrationKey(true);
-      setWorkerRegistrationKeyError(null);
+      setIsIssuingWorkerInstallToken(true);
+      setWorkerInstallError(null);
 
-      const result = await authClient.issueWorkerRegistrationKey(accessToken);
-      setWorkerRegistrationKey(result.registrationKey);
-      setWorkerRegistrationKeyIssuedAtUtc(result.issuedAtUtc);
+      const result = await authClient.issueWorkerInstallToken(accessToken);
+      setWorkerInstallToken(result.token);
+      setWorkerInstallCommand(result.installCommand);
+      setWorkerInstallUrl(result.installUrl);
+      setWorkerInstallIssuedAtUtc(result.issuedAtUtc);
+      setWorkerInstallExpiresAtUtc(result.expiresAtUtc);
     } catch (error) {
       const message = (error as Error).message;
       if (!handleAuthFailure(message)) {
-        setWorkerRegistrationKeyError(message);
+        setWorkerInstallError(message);
       }
     } finally {
-      setIsIssuingWorkerRegistrationKey(false);
+      setIsIssuingWorkerInstallToken(false);
     }
   }, [
     accessToken,
     authClient,
     handleAuthFailure,
-    setIsIssuingWorkerRegistrationKey,
-    setWorkerRegistrationKey,
-    setWorkerRegistrationKeyError,
-    setWorkerRegistrationKeyIssuedAtUtc,
+    setIsIssuingWorkerInstallToken,
+    setWorkerInstallCommand,
+    setWorkerInstallError,
+    setWorkerInstallExpiresAtUtc,
+    setWorkerInstallIssuedAtUtc,
+    setWorkerInstallToken,
+    setWorkerInstallUrl,
   ]);
 
-  return { handleIssueWorkerRegistrationKey };
+  return { handleIssueWorkerInstallToken };
 }
