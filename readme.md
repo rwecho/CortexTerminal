@@ -106,12 +106,43 @@ cd mobile && npm install && npm run dev -- --host 127.0.0.1 --port 4173
 
 ### Worker 接入（推荐）
 
-- 对终端用户，推荐只保留一种 onboarding 方式：
-      - 在 mobile 中进入 `安装 Worker`
-      - 生成一条安装命令
-      - 在电脑终端执行该命令完成安装与首次启动
-- 示例：`curl -fsSL 'https://<gateway>/install-worker.sh?token=<iwk_token>' | bash`
-- 如果你是在本地开发或调试 worker 代码，仍可直接进入 `worker/src/CortexTerminal.Worker` 执行 `dotnet run`
+对终端用户，推荐只保留一种 onboarding 方式：
+
+1. 在 mobile 中进入 `安装 Worker`
+2. 生成一条安装命令
+3. 根据目标电脑的平台复制对应命令完成安装与首次启动
+
+#### 可复制的安装脚本
+
+macOS / Linux:
+
+```bash
+curl -fsSL 'https://gateway.ct.rwecho.top/install-worker.sh?token=<iwk_token>' | bash
+```
+
+Windows:
+
+```powershell
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://gateway.ct.rwecho.top/install-worker.ps1?token=<iwk_token>').Content))"
+```
+
+#### 安装脚本会做什么
+
+- 自动下载最新 worker release
+- 自动比较 `package-version.txt` 与本机当前已安装版本
+- 如果发现更高版本，则执行 upgrade
+- 如果版本相同，则跳过重复安装
+- Linux 会注册并启动 `systemd --user` Worker service
+- macOS 会注册并启动 `launchd` Worker agent
+- Windows 会使用随包一起下发的 `nssm.exe`，并将 worker 注册为 Windows Service 后启动
+
+#### 再次执行脚本时的行为
+
+- **same version**：跳过，不重复安装
+- **higher version**：升级，并保留现有 `WORKER_ID` / `WORKER_DISPLAY_NAME` / `WORKER_USER_KEY`
+- **lower version**：拒绝 downgrade，避免误覆盖
+
+如果你是在本地开发或调试 worker 代码，仍可直接进入 `worker/src/CortexTerminal.Worker` 执行 `dotnet run`
 
 ### 构建 MAUI Shell
 

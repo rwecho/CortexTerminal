@@ -22,12 +22,20 @@ export type RegisterGatewayUserPayload = {
   email?: string;
 };
 
+export type WorkerInstallCommandSet = {
+  unixUrl: string;
+  unixCommand: string;
+  windowsUrl: string;
+  windowsCommand: string;
+};
+
 export type WorkerInstallToken = {
   token: string;
   issuedAtUtc: string;
   expiresAtUtc: string;
   installUrl: string;
   installCommand: string;
+  installCommands?: WorkerInstallCommandSet;
 };
 
 function normalizeGatewayRequestError(

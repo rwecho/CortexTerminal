@@ -37,8 +37,11 @@
 - 推荐安装方式（对终端用户 only one path）:
   - 登录 mobile，进入 `安装 Worker`
   - 生成安装命令
-  - 在电脑执行：`curl -fsSL 'https://<gateway>/install-worker.sh?token=<iwk_token>' | bash`
-  - 脚本会下载最新 worker release、写默认 `worker.env`、并直接启动 worker
+  - 按电脑平台复制对应 one-liner：
+    - macOS / Linux：`curl -fsSL 'https://<gateway>/install-worker.sh?token=<iwk_token>' | bash`
+    - Windows：`powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://<gateway>/install-worker.ps1?token=<iwk_token>').Content))"`
+  - 脚本会下载最新 worker release，并对比安装包里的 `package-version.txt` 与当前已安装版本；如果发现更高版本则执行升级，如果版本相同则跳过重复安装。
+  - 升级时会尽量保留现有 `worker.env` 中的 `WORKER_ID`、`WORKER_DISPLAY_NAME`、`WORKER_USER_KEY` 等身份配置；Linux 会更新同一个 `systemd --user` service，macOS 会更新同一个 `launchd` agent，Windows 会更新同一个 Windows Service。
 
 - GitHub Actions:
   - `.github/workflows/worker-package.yml` 会产出 `linux-x64`、`osx-arm64`、`win-x64` 三个平台安装包。
@@ -47,8 +50,10 @@
   - `scripts/install-worker.sh`
   - `scripts/install-worker.ps1`
   - `scripts/worker.env.example`
-- 内部 / 运维 fallback（非终端用户 onboarding）:
-  - 仅在离线分发、手工排障或 operator 场景下，才直接使用安装包里的脚本。
-  - Unix/macOS：`./scripts/install-worker.sh --install-dir ~/.cortex-terminal/worker --force`
-  - Windows：`pwsh -File .\scripts\install-worker.ps1 -InstallDir "$HOME/.cortex-terminal/worker" -Force`
-  - 手工安装后，如需调整配置，可编辑 `config/worker.env`，再使用生成的 `run-worker.sh` 或 `run-worker.ps1` 启动 worker。
+  - `package-version.txt`
+  - Windows 额外包含 `tools/nssm/nssm.exe`
+  - package root 会包含 `THIRD_PARTY_NOTICES.md`
+- 服务管理：
+  - Linux：安装后由 `systemd --user` 管理 Worker 生命周期。
+  - macOS：安装后由 `launchd` LaunchAgent 管理 Worker 生命周期。
+  - Windows：安装后由 NSSM 注册的 Windows Service 管理 Worker 生命周期。

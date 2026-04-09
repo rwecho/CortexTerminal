@@ -125,11 +125,11 @@ async function mockAuthenticatedShell(
         sessionId: "session-created-from-playwright",
         userId: principal.subject,
         workerId: payload.workerId,
-        displayName: payload.displayName,
+        displayName: payload.displayName ?? "Playwright Created Session",
         workingDirectory: payload.workingDirectory,
         state: "Active",
         mobileConnectionId: null,
-        traceId: payload.traceId,
+        traceId: payload.traceId ?? "trace-created-from-playwright",
         createdAtUtc: "2026-04-07T10:08:00Z",
         updatedAtUtc: "2026-04-07T10:08:00Z",
         lastActivityAtUtc: "2026-04-07T10:08:00Z",
@@ -173,6 +173,16 @@ async function mockAuthenticatedShell(
           "https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_PLAYWR1",
         installCommand:
           "curl -fsSL 'https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_PLAYWR1' | bash",
+        installCommands: {
+          unixUrl:
+            "https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_PLAYWR1",
+          unixCommand:
+            "curl -fsSL 'https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_PLAYWR1' | bash",
+          windowsUrl:
+            "https://gateway.ct.rwecho.top/install-worker.ps1?token=iwk_PLAYWR1",
+          windowsCommand:
+            "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command \"& ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://gateway.ct.rwecho.top/install-worker.ps1?token=iwk_PLAYWR1').Content))\"",
+        },
       }),
     });
   });
@@ -290,6 +300,12 @@ test("worker install page issues install command", async ({ page }) => {
 
   await expect(
     page.getByText(/install-worker\.sh\?token=iwk_PLAYWR1/),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Windows" }).click();
+
+  await expect(
+    page.getByText(/install-worker\.ps1\?token=iwk_PLAYWR1/),
   ).toBeVisible();
 });
 

@@ -1,10 +1,13 @@
 import { create } from "zustand";
+import type { WorkerInstallCommandSet } from "../../../lib/gatewayAuthClient";
 
 type WorkerPairingStore = {
-  workerInstallCommand: string | null;
+  workerInstallCommands: WorkerInstallCommandSet | null;
   workerInstallError: string | null;
   isIssuingWorkerInstallToken: boolean;
-  setWorkerInstallCommand: (workerInstallCommand: string | null) => void;
+  setWorkerInstallCommands: (
+    workerInstallCommands: WorkerInstallCommandSet | null,
+  ) => void;
   setWorkerInstallError: (workerInstallError: string | null) => void;
   setIsIssuingWorkerInstallToken: (
     isIssuingWorkerInstallToken: boolean,
@@ -13,17 +16,17 @@ type WorkerPairingStore = {
 };
 
 export const useWorkerPairingStore = create<WorkerPairingStore>((set) => ({
-  workerInstallCommand: null,
+  workerInstallCommands: null,
   workerInstallError: null,
   isIssuingWorkerInstallToken: false,
-  setWorkerInstallCommand: (workerInstallCommand) =>
-    set({ workerInstallCommand }),
+  setWorkerInstallCommands: (workerInstallCommands) =>
+    set({ workerInstallCommands }),
   setWorkerInstallError: (workerInstallError) => set({ workerInstallError }),
   setIsIssuingWorkerInstallToken: (isIssuingWorkerInstallToken) =>
     set({ isIssuingWorkerInstallToken }),
   resetWorkerPairingState: () =>
     set({
-      workerInstallCommand: null,
+      workerInstallCommands: null,
       workerInstallError: null,
       isIssuingWorkerInstallToken: false,
     }),

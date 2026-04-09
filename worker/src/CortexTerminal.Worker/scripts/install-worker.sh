@@ -39,6 +39,72 @@ config_dir="$install_dir/config"
 env_template="$package_root/scripts/worker.env.example"
 env_file="$config_dir/worker.env"
 launcher_path="$install_dir/run-worker.sh"
+package_version_file="$package_root/package-version.txt"
+installed_version_file="$install_dir/package-version.txt"
+
+normalize_package_version() {
+  local value="${1:-}"
+  value="${value#v}"
+  printf '%s' "$value"
+}
+
+read_version_file() {
+  local file_path="$1"
+  [[ -f "$file_path" ]] || return 0
+  tr -d '\r\n' < "$file_path"
+}
+
+is_comparable_package_version() {
+  local value
+  value="$(normalize_package_version "$1")"
+  [[ "$value" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]
+}
+
+compare_package_versions() {
+  local incoming_version installed_version max_version
+  incoming_version="$(normalize_package_version "$1")"
+  installed_version="$(normalize_package_version "$2")"
+
+  if [[ -z "$incoming_version" || -z "$installed_version" ]]; then
+    printf 'unknown'
+    return 0
+  fi
+
+  if [[ "$incoming_version" == "$installed_version" ]]; then
+    printf 'same'
+    return 0
+  fi
+
+  if is_comparable_package_version "$incoming_version" && is_comparable_package_version "$installed_version"; then
+    max_version="$(printf '%s\n%s\n' "$incoming_version" "$installed_version" | sort -V | tail -n 1)"
+    if [[ "$max_version" == "$incoming_version" ]]; then
+      printf 'newer'
+    else
+      printf 'older'
+    fi
+
+    return 0
+  fi
+
+  printf 'unknown'
+}
+
+package_version="$(read_version_file "$package_version_file")"
+installed_version="$(read_version_file "$installed_version_file")"
+
+case "$(compare_package_versions "$package_version" "$installed_version")" in
+  same)
+    cat <<EOF
+Worker version $package_version is already installed at $install_dir.
+Skipping reinstall.
+EOF
+    exit 0
+    ;;
+  older)
+    echo "Refusing to downgrade worker from $installed_version to $package_version." >&2
+    exit 1
+    ;;
+esac
 
 if [[ -d "$bin_dir" ]] && [[ "$(find "$bin_dir" -mindepth 1 -maxdepth 1 | head -n 1)" != "" ]] && [[ "$force" != "true" ]]; then
   echo "Install target already contains files: $bin_dir" >&2
@@ -52,6 +118,10 @@ cp -R "$package_root"/. "$bin_dir"/
 
 if [[ ! -f "$env_file" ]]; then
   cp "$env_template" "$env_file"
+fi
+
+if [[ -f "$package_version_file" ]]; then
+  cp "$package_version_file" "$installed_version_file"
 fi
 
 cat > "$launcher_path" <<'EOF'
@@ -87,6 +157,8 @@ Worker installed successfully.
 Install directory: $install_dir
 Environment file : $env_file
 Launcher         : $launcher_path
+
+$(if [[ -n "$package_version" ]]; then printf 'Package version  : %s\n' "$package_version"; fi)
 
 Next steps:
   1. Edit $env_file

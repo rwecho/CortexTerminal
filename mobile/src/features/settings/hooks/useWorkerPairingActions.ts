@@ -1,14 +1,37 @@
 import { useCallback, useMemo } from "react";
-import { createGatewayAuthClient } from "../../../lib/gatewayAuthClient";
+import {
+  createGatewayAuthClient,
+  type WorkerInstallCommandSet,
+} from "../../../lib/gatewayAuthClient";
 import { gatewayUrl } from "../../app/config";
 import { useAuthFailureHandler } from "../../app/hooks/useAuthFailureHandler";
 import { useAuthStore } from "../../auth/store/useAuthStore";
 import { useWorkerPairingStore } from "../store/useWorkerPairingStore";
 
+function resolveInstallCommands(
+  installUrl: string,
+  installCommand: string,
+  installCommands?: WorkerInstallCommandSet,
+): WorkerInstallCommandSet {
+  if (installCommands) {
+    return installCommands;
+  }
+
+  return {
+    unixUrl: installUrl,
+    unixCommand: installCommand,
+    windowsUrl: installUrl.replace(
+      /install-worker\.sh(?=\?)/,
+      "install-worker.ps1",
+    ),
+    windowsCommand: "",
+  };
+}
+
 export function useWorkerPairingActions() {
   const accessToken = useAuthStore((state) => state.accessToken);
-  const setWorkerInstallCommand = useWorkerPairingStore(
-    (state) => state.setWorkerInstallCommand,
+  const setWorkerInstallCommands = useWorkerPairingStore(
+    (state) => state.setWorkerInstallCommands,
   );
   const setWorkerInstallError = useWorkerPairingStore(
     (state) => state.setWorkerInstallError,
@@ -30,7 +53,13 @@ export function useWorkerPairingActions() {
       setWorkerInstallError(null);
 
       const result = await authClient.issueWorkerInstallToken(accessToken);
-      setWorkerInstallCommand(result.installCommand);
+      setWorkerInstallCommands(
+        resolveInstallCommands(
+          result.installUrl,
+          result.installCommand,
+          result.installCommands,
+        ),
+      );
     } catch (error) {
       const message = (error as Error).message;
       if (!handleAuthFailure(message)) {
@@ -44,7 +73,7 @@ export function useWorkerPairingActions() {
     authClient,
     handleAuthFailure,
     setIsIssuingWorkerInstallToken,
-    setWorkerInstallCommand,
+    setWorkerInstallCommands,
     setWorkerInstallError,
   ]);
 

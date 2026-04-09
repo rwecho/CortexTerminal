@@ -155,17 +155,62 @@ $ cortex session start
             <p>
               在 mobile 里点击“安装
               Worker”并生成安装命令后，直接复制下面这一条命令到你的电脑执行。
-              脚本会自动下载 worker release、写默认配置并启动首个 worker。
+              macOS / Linux 会拿到 bash one-liner，Windows 会拿到 PowerShell
+              one-liner。脚本会自动下载 worker
+              release、比较安装包版本与当前已安装版本；
+              如果检测到更高版本，会直接执行
+              upgrade。如果版本相同，则跳过重复安装。 其中 Windows release
+              会随包带上 `nssm.exe`，并把 worker 注册为 Windows Service 后启动；
+              Linux 会注册为 `systemd --user` service，macOS 会注册为 `launchd`
+              agent。
             </p>
           </div>
 
           <div class="command-card">
-            <div class="command-label">One-liner</div>
+            <div class="command-label">macOS / Linux one-liner</div>
             <code
               >curl -fsSL
               'https://gateway.ct.rwecho.top/install-worker.sh?token=iwk_xxxxxxxx'
               | bash</code
             >
+          </div>
+
+          <div class="command-card">
+            <div class="command-label">macOS / Linux script block</div>
+            <pre><code>curl -fsSL 'https://gateway.ct.rwecho.top/install-worker.sh?token=&lt;iwk_token&gt;' | bash</code></pre>
+          </div>
+
+          <div class="command-card">
+            <div class="command-label">Windows one-liner</div>
+            <code
+              >powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command
+              "&amp; ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing
+              'https://gateway.ct.rwecho.top/install-worker.ps1?token=iwk_xxxxxxxx').Content))"</code
+            >
+          </div>
+
+          <div class="command-card">
+            <div class="command-label">Windows script block</div>
+            <pre><code>powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "&amp; ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://gateway.ct.rwecho.top/install-worker.ps1?token=&lt;iwk_token&gt;').Content))"</code></pre>
+          </div>
+
+          <div class="worker-notes">
+            <div>
+              <h3>再次执行安装脚本会怎样？</h3>
+              <p>
+                脚本会先比较
+                `package-version.txt`。相同版本会直接跳过；更高版本会执行升级；
+                更低版本会拒绝覆盖，避免误 downgrade。
+              </p>
+            </div>
+            <div>
+              <h3>升级会不会换一台新 Worker？</h3>
+              <p>
+                不会。升级流程会尽量保留原有 `WORKER_ID`、`WORKER_DISPLAY_NAME`
+                与 `WORKER_USER_KEY`，并继续更新同一个受管服务：Linux 为 systemd
+                --user，macOS 为 launchd，Windows 为 NSSM service。
+              </p>
+            </div>
           </div>
 
           <div class="worker-notes">
