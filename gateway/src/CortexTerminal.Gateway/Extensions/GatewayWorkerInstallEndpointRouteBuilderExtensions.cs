@@ -92,7 +92,27 @@ public static class GatewayWorkerInstallEndpointRouteBuilderExtensions
 
     private static string BuildGatewayBaseUrl(HttpRequest request)
     {
-        return $"{request.Scheme}://{request.Host}{request.PathBase}".TrimEnd('/');
+        var scheme = GetForwardedHeaderValue(request.Headers["X-Forwarded-Proto"])
+            ?? request.Scheme;
+
+        var forwardedHost = GetForwardedHeaderValue(request.Headers["X-Forwarded-Host"]);
+        var host = string.IsNullOrWhiteSpace(forwardedHost)
+            ? request.Host.Value
+            : forwardedHost;
+
+        return $"{scheme}://{host}{request.PathBase}".TrimEnd('/');
+    }
+
+    internal static string? GetForwardedHeaderValue(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return null;
+        }
+
+        return rawValue
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     }
 
     private sealed record WorkerInstallBootstrapRequest(string Token);

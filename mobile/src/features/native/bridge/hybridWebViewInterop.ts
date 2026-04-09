@@ -164,6 +164,17 @@ declare global {
   function sendRawMessage(message: any) {
     sendMessageToDotNet("__RawMessage", message);
   }
+
+  function shouldMirrorInvokeBodyToHeader() {
+    return Boolean(window.hybridWebViewHost);
+  }
+
+  function createAsciiSafeJsonHeaderValue(json: string) {
+    return json.replace(/[\u007f-\uffff]/g, (character) => {
+      const codeUnit = character.charCodeAt(0).toString(16).padStart(4, "0");
+      return `\\u${codeUnit}`;
+    });
+  }
   /*
    * Invoke a .NET method on the InvokeJavaScriptTarget instance.
    * The method name and parameters are serialized and sent to the .NET host application.
@@ -202,16 +213,12 @@ declare global {
       "X-Maui-Invoke-Token": "HybridWebView",
     } as Record<string, string>;
 
-    if (
-      !!window.hybridWebViewHost ||
-      (!window.chrome?.webview &&
-        !(window.webkit && window.webkit.messageHandlers?.webwindowinterop) &&
-        (window.location.protocol === "file:" ||
-          window.location.hostname === "0.0.0.0"))
-    ) {
-      // Android's WebView does not allow setting custom headers or the request body when using fetch.
-      // To work around this, we include the message in a custom header and the server will read it from there.
-      headers["X-Maui-Request-Body"] = message;
+    if (shouldMirrorInvokeBodyToHeader()) {
+      // Official MAUI HybridWebView mirrors the POST body into a header for some
+      // Android devices/WebView combinations that do not reliably surface the body
+      // during native request interception. Keep that fallback, but normalize it to
+      // pure ASCII so Chromium won't reject the request when arguments contain中文等Unicode字符。
+      headers["X-Maui-Request-Body"] = createAsciiSafeJsonHeaderValue(message);
     }
 
     const rawResponse = await fetch(requestUrl, {

@@ -39,6 +39,7 @@ config_dir="$install_dir/config"
 env_template="$package_root/scripts/worker.env.example"
 env_file="$config_dir/worker.env"
 launcher_path="$install_dir/run-worker.sh"
+uninstall_path="$install_dir/uninstall-worker.sh"
 package_version_file="$package_root/package-version.txt"
 installed_version_file="$install_dir/package-version.txt"
 
@@ -147,8 +148,24 @@ fi
 exec dotnet "$bin_dir/CortexTerminal.Worker.dll" "$@"
 EOF
 
+cat > "$uninstall_path" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+install_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+uninstall_script="$install_dir/bin/scripts/uninstall-worker.sh"
+
+if [[ ! -x "$uninstall_script" ]]; then
+  chmod +x "$uninstall_script" 2>/dev/null || true
+fi
+
+exec "$uninstall_script" --install-dir "$install_dir" "$@"
+EOF
+
 chmod +x "$launcher_path"
+chmod +x "$uninstall_path"
 chmod +x "$bin_dir/scripts/install-worker.sh" || true
+chmod +x "$bin_dir/scripts/uninstall-worker.sh" || true
 chmod +x "$bin_dir/scripts/entrypoint.sh" || true
 
 cat <<EOF
@@ -157,10 +174,12 @@ Worker installed successfully.
 Install directory: $install_dir
 Environment file : $env_file
 Launcher         : $launcher_path
+Uninstall        : $uninstall_path
 
 $(if [[ -n "$package_version" ]]; then printf 'Package version  : %s\n' "$package_version"; fi)
 
 Next steps:
   1. Edit $env_file
   2. Run: $launcher_path
+  3. Remove: $uninstall_path
 EOF

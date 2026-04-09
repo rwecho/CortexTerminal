@@ -294,6 +294,7 @@ internal static class WorkerInstallScriptBuilder
             "config_dir=\"$install_dir/config\"",
             "env_file=\"$config_dir/worker.env\"",
             "launcher_path=\"$install_dir/run-worker.sh\"",
+            "uninstall_path=\"$install_dir/uninstall-worker.sh\"",
             "logs_dir=\"$install_dir/logs\"",
             "mkdir -p \"$config_dir\"",
             "existing_worker_id=\"$(read_env_value WORKER_ID \"$env_file\")\"",
@@ -333,7 +334,8 @@ internal static class WorkerInstallScriptBuilder
             "esac",
             string.Empty,
             "log \"worker installed to $install_dir\"",
-            "log \"managed worker service is active for $worker_display_name\""
+            "log \"managed worker service is active for $worker_display_name\"",
+            "log \"uninstall with: $uninstall_path\""
         ]);
     }
 
@@ -623,6 +625,7 @@ internal static class WorkerInstallScriptBuilder
             "    $configDir = Join-Path $InstallDir 'config'",
             "    $envFile = Join-Path $configDir 'worker.env'",
             "    $workerHome = Get-WorkerHomePath",
+            "    $uninstallPath = Join-Path $InstallDir 'uninstall-worker.ps1'",
             "    New-Item -ItemType Directory -Force -Path $configDir | Out-Null",
             "    $existingWorkerId = Read-EnvValue -Path $envFile -Key 'WORKER_ID'",
             "    $existingWorkerDisplayName = Read-EnvValue -Path $envFile -Key 'WORKER_DISPLAY_NAME'",
@@ -650,6 +653,7 @@ internal static class WorkerInstallScriptBuilder
             "    Log \"starting NSSM service $serviceName\"",
             "    & $nssmPath start $serviceName | Out-Null",
             "    Log \"Windows service installed and started: $serviceName\"",
+            "    Log \"uninstall with: pwsh -File $uninstallPath\"",
             "    exit 0",
             "}",
             "finally {",

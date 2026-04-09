@@ -13,6 +13,7 @@ $configDir = Join-Path $InstallDir "config"
 $envTemplate = Join-Path $packageRoot "scripts/worker.env.example"
 $envFile = Join-Path $configDir "worker.env"
 $launcherPath = Join-Path $InstallDir "run-worker.ps1"
+$uninstallPath = Join-Path $InstallDir "uninstall-worker.ps1"
 $packageVersionFile = Join-Path $packageRoot "package-version.txt"
 $installedVersionFile = Join-Path $InstallDir "package-version.txt"
 
@@ -137,10 +138,32 @@ exit $LASTEXITCODE
 
 Set-Content -Path $launcherPath -Value $launcher -Encoding UTF8
 
+$uninstaller = @'
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$UninstallArgs
+)
+
+$ErrorActionPreference = "Stop"
+
+$installDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$uninstallScript = Join-Path $installDir "bin/scripts/uninstall-worker.ps1"
+
+if (-not (Test-Path $uninstallScript)) {
+    throw "Worker uninstall script was not found: $uninstallScript"
+}
+
+& $uninstallScript -InstallDir $installDir @UninstallArgs
+exit $LASTEXITCODE
+'@
+
+Set-Content -Path $uninstallPath -Value $uninstaller -Encoding UTF8
+
 Write-Host "Worker installed successfully."
 Write-Host "Install directory: $InstallDir"
 Write-Host "Environment file : $envFile"
 Write-Host "Launcher         : $launcherPath"
+Write-Host "Uninstall        : $uninstallPath"
 if (-not [string]::IsNullOrWhiteSpace($packageVersion)) {
     Write-Host "Package version  : $packageVersion"
 }
@@ -150,3 +173,4 @@ if (Test-Path (Join-Path $binDir "tools/nssm/nssm.exe")) {
 Write-Host "Next steps:"
 Write-Host "  1. Edit $envFile"
 Write-Host "  2. Run: pwsh -File $launcherPath"
+Write-Host "  3. Remove: pwsh -File $uninstallPath"

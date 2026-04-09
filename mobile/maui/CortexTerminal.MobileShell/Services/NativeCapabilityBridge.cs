@@ -104,6 +104,21 @@ public sealed class NativeCapabilityBridge(
         });
     }
 
+    public Task<string> CopyTextAsync(string text)
+    {
+        return ExecuteSafeVoidAsync(() => Clipboard.Default.SetTextAsync(text ?? string.Empty));
+    }
+
+    public Task<string> ShareTextAsync(string title, string text)
+    {
+        return ExecuteSafeVoidAsync(() => Share.Default.RequestAsync(new ShareTextRequest
+        {
+            Title = string.IsNullOrWhiteSpace(title) ? "分享安装命令" : title,
+            Subject = string.IsNullOrWhiteSpace(title) ? "分享安装命令" : title,
+            Text = text ?? string.Empty
+        }));
+    }
+
     public Task<string> GetStartupConfigAsync()
     {
         return ExecuteSafeAsync(() => Task.FromResult(CreateStartupConfigPayload()));

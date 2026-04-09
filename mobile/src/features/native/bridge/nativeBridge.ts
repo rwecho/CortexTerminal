@@ -9,6 +9,11 @@ export type NativeRecordedAudio = NativePickedFile & {
   durationMs?: number;
 };
 
+type NativeShareOptions = {
+  title?: string;
+  text: string;
+};
+
 type NativeAlertOptions = {
   title: string;
   message: string;
@@ -67,7 +72,10 @@ async function invokeNative<T>(
     throw new Error("HybridWebView native bridge is not available.");
   }
 
-  const rawResponse = await invokeDotNet(methodName, ...args);
+  const invokePayload =
+    args.length === 0 ? undefined : args.length === 1 ? args[0] : args;
+
+  const rawResponse = await invokeDotNet(methodName, invokePayload);
   const response = parseBridgeResponse<T>(rawResponse);
 
   if (response.error) {
@@ -286,4 +294,69 @@ export async function stopNativeRecording(): Promise<NativeRecordedAudio | null>
   }
 
   return stopBrowserRecording();
+}
+
+function canUseBrowserClipboard(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.clipboard?.writeText;
+}
+
+async function copyWithDocumentCommand(text: string): Promise<void> {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+
+  try {
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+
+    const copied = document.execCommand("copy");
+    if (!copied) {
+      throw new Error("当前环境不支持复制到剪贴板。");
+    }
+  } finally {
+    textarea.remove();
+  }
+}
+
+export async function copyNativeText(text: string): Promise<void> {
+  if (hasNativeBridge()) {
+    await invokeNative<{ success: boolean }>("CopyTextAsync", text);
+    return;
+  }
+
+  if (canUseBrowserClipboard()) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  await copyWithDocumentCommand(text);
+}
+
+export async function shareNativeText({
+  title,
+  text,
+}: NativeShareOptions): Promise<boolean> {
+  if (hasNativeBridge()) {
+    await invokeNative<{ success: boolean }>(
+      "ShareTextAsync",
+      title ?? "",
+      text,
+    );
+    return true;
+  }
+
+  if (
+    typeof navigator !== "undefined" &&
+    typeof navigator.share === "function"
+  ) {
+    await navigator.share({ title, text });
+    return true;
+  }
+
+  await copyNativeText(text);
+  return false;
 }
