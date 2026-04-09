@@ -24,7 +24,11 @@ export function createManagementRealtimeClient(
 
   connection.on("WorkersChanged", onWorkersChanged);
   connection.on("SessionsChanged", onSessionsChanged);
-  connection.onreconnected(() => connection.invoke("SubscribeOverview"));
+  connection.onreconnected(async () => {
+    await connection.invoke("SubscribeOverview");
+    onWorkersChanged();
+    onSessionsChanged();
+  });
 
   return {
     async connect() {

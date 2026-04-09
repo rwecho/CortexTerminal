@@ -32,6 +32,20 @@ const nativeShellGatewayUrl = "https://gateway.ct.rwecho.top";
 const fallbackBrowserVersion = "web";
 const fallbackBrowserBuild = "browser";
 
+function hasNativeHostBridgeTransport(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return Boolean(
+    (window.chrome && window.chrome.webview) ||
+    (window.webkit &&
+      window.webkit.messageHandlers &&
+      window.webkit.messageHandlers.webwindowinterop) ||
+    window.hybridWebViewHost,
+  );
+}
+
 export function isLikelyNativeShellHostRuntime(): boolean {
   if (typeof window === "undefined") {
     return false;
@@ -39,7 +53,7 @@ export function isLikelyNativeShellHostRuntime(): boolean {
 
   return (
     window.location.protocol === "file:" ||
-    "HybridWebView" in window ||
+    hasNativeHostBridgeTransport() ||
     window.location.hostname === "0.0.0.0"
   );
 }
@@ -67,7 +81,7 @@ function createBrowserStartupConfig(): StartupConfig {
 let startupConfig: StartupConfig = createBrowserStartupConfig();
 
 function hasNativeInvokeBridge(): boolean {
-  return typeof window.HybridWebView?.InvokeDotNet === "function";
+  return hasNativeHostBridgeTransport();
 }
 
 function normalizeStartupConfig(

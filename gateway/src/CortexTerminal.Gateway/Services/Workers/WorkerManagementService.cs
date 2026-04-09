@@ -21,15 +21,31 @@ public sealed class WorkerManagementService(
             .OrderBy(worker => worker.WorkerId)
             .ToListAsync(cancellationToken);
 
-        var presence = await workerPresenceStore.GetWorkerPresenceStatesAsync(
+        var rawPresence = await workerPresenceStore.GetWorkerPresenceStatesAsync(
             workers.Select(worker => worker.WorkerId),
             cancellationToken);
 
-        await NormalizeOfflineWorkersAsync(workers, presence, cancellationToken);
+        var presence = await FilterFreshPresenceAsync(rawPresence, cancellationToken);
+
+        await NormalizeOfflineWorkersAsync(workers, rawPresence, presence, cancellationToken);
 
         return workers
             .Select(worker => WorkerNodeResponse.FromModel(worker, presence.ContainsKey(worker.WorkerId)))
             .ToList();
+    }
+
+    public async Task<bool> ReconcilePresenceAsync(CancellationToken cancellationToken)
+    {
+        var workers = await dbContext.Workers
+            .OrderBy(worker => worker.WorkerId)
+            .ToListAsync(cancellationToken);
+
+        var rawPresence = await workerPresenceStore.GetWorkerPresenceStatesAsync(
+            workers.Select(worker => worker.WorkerId),
+            cancellationToken);
+
+        var freshPresence = await FilterFreshPresenceAsync(rawPresence, cancellationToken);
+        return await NormalizeOfflineWorkersAsync(workers, rawPresence, freshPresence, cancellationToken);
     }
 
     public async Task<WorkerNodeResponse?> GetAsync(string workerId, CancellationToken cancellationToken)
@@ -40,11 +56,23 @@ public sealed class WorkerManagementService(
             return null;
         }
 
-        var presence = await workerPresenceStore.GetWorkerPresenceAsync(workerId, cancellationToken);
-        await NormalizeOfflineWorkersAsync([worker], presence is null
+        var rawPresence = await workerPresenceStore.GetWorkerPresenceAsync(workerId, cancellationToken);
+        var utcNow = DateTime.UtcNow;
+        var isOnline = WorkerPresencePolicy.IsWorkerOnline(rawPresence, utcNow);
+        if (!isOnline && rawPresence is not null)
+        {
+            await workerPresenceStore.MarkWorkerOfflineAsync(workerId, cancellationToken);
+        }
+
+        var freshPresence = isOnline
+            ? new Dictionary<string, WorkerPresenceSnapshot> { [workerId] = rawPresence! }
+            : new Dictionary<string, WorkerPresenceSnapshot>();
+        var allPresence = rawPresence is null
             ? new Dictionary<string, WorkerPresenceSnapshot>()
-            : new Dictionary<string, WorkerPresenceSnapshot> { [workerId] = presence }, cancellationToken);
-        return WorkerNodeResponse.FromModel(worker, presence is not null);
+            : new Dictionary<string, WorkerPresenceSnapshot> { [workerId] = rawPresence };
+
+        await NormalizeOfflineWorkersAsync([worker], allPresence, freshPresence, cancellationToken);
+        return WorkerNodeResponse.FromModel(worker, isOnline);
     }
 
     public async Task<bool> DeleteOfflineAsync(string workerId, CancellationToken cancellationToken)
@@ -249,31 +277,88 @@ public sealed class WorkerManagementService(
         return JsonSerializer.Serialize(normalizedPaths ?? []);
     }
 
-    private async Task NormalizeOfflineWorkersAsync(
-        IReadOnlyList<WorkerNodeRecord> workers,
+    private async Task<IReadOnlyDictionary<string, WorkerPresenceSnapshot>> FilterFreshPresenceAsync(
         IReadOnlyDictionary<string, WorkerPresenceSnapshot> presence,
         CancellationToken cancellationToken)
     {
+        var utcNow = DateTime.UtcNow;
+        var freshPresence = new Dictionary<string, WorkerPresenceSnapshot>(StringComparer.Ordinal);
+
+        foreach (var pair in presence)
+        {
+            if (WorkerPresencePolicy.IsWorkerOnline(pair.Value, utcNow))
+            {
+                freshPresence[pair.Key] = pair.Value;
+                continue;
+            }
+
+            await workerPresenceStore.MarkWorkerOfflineAsync(pair.Key, cancellationToken);
+        }
+
+        return freshPresence;
+    }
+
+    private async Task<bool> NormalizeOfflineWorkersAsync(
+        IReadOnlyList<WorkerNodeRecord> workers,
+        IReadOnlyDictionary<string, WorkerPresenceSnapshot> allPresence,
+        IReadOnlyDictionary<string, WorkerPresenceSnapshot> freshPresence,
+        CancellationToken cancellationToken)
+    {
         var staleWorkers = workers
-            .Where(worker => !presence.ContainsKey(worker.WorkerId)
+            .Where(worker => !freshPresence.ContainsKey(worker.WorkerId)
                 && (worker.State == WorkerLifecycleState.Online
                     || !string.IsNullOrWhiteSpace(worker.CurrentConnectionId)))
             .ToList();
 
         if (staleWorkers.Count == 0)
         {
-            return;
+            return false;
         }
 
         var utcNow = DateTime.UtcNow;
+        var staleWorkerIds = staleWorkers.Select(worker => worker.WorkerId).ToArray();
+
         foreach (var worker in staleWorkers)
         {
+            if (allPresence.ContainsKey(worker.WorkerId))
+            {
+                await workerPresenceStore.MarkWorkerOfflineAsync(worker.WorkerId, cancellationToken);
+            }
+
             worker.State = WorkerLifecycleState.Offline;
             worker.CurrentConnectionId = null;
             worker.UpdatedAtUtc = utcNow;
         }
 
+        var activeSessions = await dbContext.Sessions
+            .Where(session => staleWorkerIds.Contains(session.WorkerId!) && session.State == SessionLifecycleState.Active)
+            .ToListAsync(cancellationToken);
+
+        foreach (var session in activeSessions)
+        {
+            session.State = SessionLifecycleState.Disconnected;
+            session.UpdatedAtUtc = utcNow;
+            await workerPresenceStore.RemoveSessionAsync(session.SessionId, cancellationToken);
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        foreach (var worker in staleWorkers)
+        {
+            await auditTrailService.WriteAsync(
+                new AuditWriteRequest(
+                    "worker",
+                    "disconnected",
+                    $"节点 {worker.DisplayName} 已离线。",
+                    ActorType: "worker",
+                    ActorId: worker.WorkerId,
+                    WorkerId: worker.WorkerId),
+                cancellationToken);
+        }
+
+        await managementEventPublisher.PublishWorkersChangedAsync();
+        await managementEventPublisher.PublishSessionsChangedAsync();
+        return true;
     }
 
     private async Task<WorkerNodeRecord> EnsureWorkerAsync(string workerId, CancellationToken cancellationToken)

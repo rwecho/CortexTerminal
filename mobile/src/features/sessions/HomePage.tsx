@@ -246,7 +246,11 @@ export function HomePage({
                       {worker.modelName ?? "Claude CLI"}
                     </span>
                     <span>·</span>
-                    <span>{worker.availablePaths.length} 个目录</span>
+                    <span>
+                      {worker.availablePaths.length === 0
+                        ? "任意目录"
+                        : `${worker.availablePaths.length} 个目录`}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -267,7 +271,7 @@ export function HomePage({
 
             <div className="mt-3 text-[10px] text-gray-500">
               {worker.availablePaths.length === 0 ? (
-                "暂无可用工作目录"
+                "创建会话时可手动输入该节点上的任意现有目录"
               ) : (
                 <>
                   <span className="text-gray-300">

@@ -1,10 +1,14 @@
+using System.Runtime.Loader;
 using CortexTerminal.Worker.Services;
 using CortexTerminal.Worker.Services.Runtime;
 using CortexTerminal.Worker.Services.Sessions;
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 
 const int maxBufferLines = 2000;
+var relayKeepAliveInterval = TimeSpan.FromSeconds(5);
+var relayServerTimeout = TimeSpan.FromSeconds(15);
 
 var workerOptions = WorkerHostOptions.LoadFromEnvironment();
 
@@ -53,19 +57,54 @@ var workerHeartbeatReporter = new WorkerHeartbeatReporter(
     workerOptions.WorkerHeartbeatInterval);
 
 using var cts = new CancellationTokenSource();
+HubConnection? connection = null;
+var shutdownRequested = 0;
+
+async Task RequestShutdownAsync(string reason)
+{
+    if (Interlocked.Exchange(ref shutdownRequested, 1) != 0)
+    {
+        return;
+    }
+
+    logger.LogInformation("[worker:shutdown] WorkerId={WorkerId}, Reason={Reason}", workerOptions.WorkerId, reason);
+    cts.Cancel();
+
+    if (connection is null || connection.State == HubConnectionState.Disconnected)
+    {
+        return;
+    }
+
+    try
+    {
+        await connection.StopAsync();
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[worker:shutdown] WorkerId={WorkerId}, graceful hub stop failed.", workerOptions.WorkerId);
+    }
+}
+
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
-    cts.Cancel();
+    _ = RequestShutdownAsync("console-cancel");
 };
 
-var connection = new HubConnectionBuilder()
+connection = new HubConnectionBuilder()
     .WithUrl(workerOptions.HubUrl, options =>
     {
         options.AccessTokenProvider = async () => (string?)await workerAccessTokenManager.GetAccessTokenAsync(cts.Token);
+        options.Transports = workerOptions.WorkerHubTransport;
     })
     .WithAutomaticReconnect()
     .Build();
+
+connection.KeepAliveInterval = relayKeepAliveInterval;
+connection.ServerTimeout = relayServerTimeout;
+
+AppDomain.CurrentDomain.ProcessExit += (_, _) => RequestShutdownAsync("process-exit").GetAwaiter().GetResult();
+AssemblyLoadContext.Default.Unloading += _ => RequestShutdownAsync("assembly-unloading").GetAwaiter().GetResult();
 
 var sessionCoordinator = new WorkerSessionCoordinator(
     gatewayManagementClient,
@@ -93,6 +132,8 @@ connection.Reconnected += async _ =>
 };
 
 logger.LogInformation("[worker:start] WorkerId={WorkerId}, HubUrl={HubUrl}, LogLevel={LogLevel}", workerOptions.WorkerId, workerOptions.HubUrl, workerOptions.WorkerLogLevel);
+logger.LogInformation("[worker:transport] WorkerId={WorkerId}, SignalRTransport={SignalRTransport}", workerOptions.WorkerId, DescribeTransport(workerOptions.WorkerHubTransport));
+logger.LogInformation("[worker:signalr-timeout] WorkerId={WorkerId}, KeepAliveInterval={KeepAliveInterval}, ServerTimeout={ServerTimeout}", workerOptions.WorkerId, relayKeepAliveInterval, relayServerTimeout);
 logger.LogInformation("[worker:runtime] WorkerId={WorkerId}, ModelName={ModelName}, Command={Command}", workerOptions.WorkerId, workerOptions.WorkerModelName, workerOptions.WorkerRuntimeCommand);
 logger.LogInformation("[worker:supported-agent-families] WorkerId={WorkerId}, AgentFamilies={AgentFamilies}", workerOptions.WorkerId, string.Join(",", workerOptions.WorkerSupportedAgentFamilies));
 logger.LogInformation("[worker:auth-mode] WorkerId={WorkerId}, RegistrationKeyConfigured={RegistrationKeyConfigured}", workerOptions.WorkerId, !string.IsNullOrWhiteSpace(workerOptions.WorkerUserKey));
@@ -146,3 +187,13 @@ await sessionMaintenanceTask;
 
 logger.LogInformation("[worker:stopped] BufferedLines={BufferedLines}", ringBuffer.Count);
 sessionCoordinator.Dispose();
+
+static string DescribeTransport(HttpTransportType transport)
+{
+    if (transport == (HttpTransportType.WebSockets | HttpTransportType.ServerSentEvents | HttpTransportType.LongPolling))
+    {
+        return "Auto";
+    }
+
+    return transport.ToString();
+}

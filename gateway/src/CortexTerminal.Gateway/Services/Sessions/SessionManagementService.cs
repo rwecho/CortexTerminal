@@ -60,8 +60,13 @@ public sealed class SessionManagementService(
             await EnsureWorkerExistsAsync(normalizedWorkerId, cancellationToken);
 
             var workerPresence = await workerPresenceStore.GetWorkerPresenceAsync(normalizedWorkerId, cancellationToken);
-            if (workerPresence is null)
+            if (!WorkerPresencePolicy.IsWorkerOnline(workerPresence, DateTime.UtcNow))
             {
+                if (workerPresence is not null)
+                {
+                    await workerPresenceStore.MarkWorkerOfflineAsync(normalizedWorkerId, cancellationToken);
+                }
+
                 throw new InvalidOperationException($"Worker '{normalizedWorkerId}' 当前离线，无法创建会话。请先恢复节点连接。\nWorker '{normalizedWorkerId}' is offline and cannot accept new sessions.");
             }
 
@@ -137,8 +142,13 @@ public sealed class SessionManagementService(
         await EnsureWorkerExistsAsync(normalizedWorkerId, cancellationToken);
 
         var workerPresence = await workerPresenceStore.GetWorkerPresenceAsync(normalizedWorkerId, cancellationToken);
-        if (workerPresence is null)
+        if (!WorkerPresencePolicy.IsWorkerOnline(workerPresence, DateTime.UtcNow))
         {
+            if (workerPresence is not null)
+            {
+                await workerPresenceStore.MarkWorkerOfflineAsync(normalizedWorkerId, cancellationToken);
+            }
+
             throw new InvalidOperationException($"Worker '{normalizedWorkerId}' 当前离线，无法重新绑定会话。\nWorker '{normalizedWorkerId}' is offline and cannot be bound.");
         }
 

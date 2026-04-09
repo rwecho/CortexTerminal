@@ -59,7 +59,6 @@ public sealed class WorkerInstallScriptBuilderTests
         Assert.Contains("package-version.txt", script);
         Assert.Contains("compare_package_versions", script);
         Assert.Contains("refreshing managed service configuration", script);
-        Assert.Contains("WORKER_DISPLAY_NAME", script);
         Assert.Contains("install_or_update_systemd_user_service", script);
         Assert.Contains("install_or_update_launchd_agent", script);
         Assert.Contains("systemctl --user", script);
@@ -70,6 +69,10 @@ public sealed class WorkerInstallScriptBuilderTests
         Assert.Contains("uninstall-worker.sh", script);
         Assert.Contains("run-worker.sh", script);
         Assert.Contains("--install-dir \"$install_dir\"", script);
+        Assert.Contains("worker-registration-key.response", script);
+        Assert.Contains("failed to request worker registration key", script);
+        Assert.Contains("automatic loading failed in both", script);
+        Assert.Contains("start the worker manually with", script);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Globalization;
 using StackExchange.Redis;
 
 namespace CortexTerminal.Gateway.Services.Workers;
@@ -128,9 +129,7 @@ public sealed class RedisWorkerPresenceStore(IConnectionMultiplexer connectionMu
     {
         var connectionId = entries.FirstOrDefault(entry => entry.Name == "connectionId").Value.ToString();
         var lastSeenText = entries.FirstOrDefault(entry => entry.Name == "lastSeenUtc").Value.ToString();
-        var lastSeenUtc = DateTime.TryParse(lastSeenText, out var parsedLastSeen)
-            ? DateTime.SpecifyKind(parsedLastSeen, DateTimeKind.Utc)
-            : DateTime.UtcNow;
+        var lastSeenUtc = ParseUtcTimestamp(lastSeenText);
 
         return new WorkerPresenceSnapshot(workerId, connectionId, lastSeenUtc);
     }
@@ -141,10 +140,19 @@ public sealed class RedisWorkerPresenceStore(IConnectionMultiplexer connectionMu
         var mobileConnectionId = entries.FirstOrDefault(entry => entry.Name == "mobileConnectionId").Value.ToString();
         var traceId = entries.FirstOrDefault(entry => entry.Name == "traceId").Value.ToString();
         var lastSeenText = entries.FirstOrDefault(entry => entry.Name == "lastSeenUtc").Value.ToString();
-        var lastSeenUtc = DateTime.TryParse(lastSeenText, out var parsedLastSeen)
-            ? DateTime.SpecifyKind(parsedLastSeen, DateTimeKind.Utc)
-            : DateTime.UtcNow;
+        var lastSeenUtc = ParseUtcTimestamp(lastSeenText);
 
         return new SessionPresenceSnapshot(sessionId, workerId, mobileConnectionId, string.IsNullOrWhiteSpace(traceId) ? null : traceId, lastSeenUtc);
+    }
+
+    internal static DateTime ParseUtcTimestamp(string? value)
+    {
+        return DateTime.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
+            out var parsedUtc)
+            ? parsedUtc
+            : DateTime.UtcNow;
     }
 }

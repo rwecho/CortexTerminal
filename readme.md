@@ -139,7 +139,7 @@ powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]
 #### 再次执行脚本时的行为
 
 - **same version**：跳过，不重复安装
-- **higher version**：升级，并保留现有 `WORKER_ID` / `WORKER_DISPLAY_NAME` / `WORKER_USER_KEY`
+- **higher version**：升级，并保留现有 `WORKER_ID` / `WORKER_USER_KEY`
 - **lower version**：拒绝 downgrade，避免误覆盖
 
 如果你是在本地开发或调试 worker 代码，仍可直接进入 `worker/src/CortexTerminal.Worker` 执行 `dotnet run`

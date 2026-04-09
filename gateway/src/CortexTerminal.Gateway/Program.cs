@@ -4,6 +4,9 @@ using CortexTerminal.Gateway.Hubs;
 using CortexTerminal.Gateway.Services;
 using Microsoft.Extensions.Logging;
 
+var relayKeepAliveInterval = TimeSpan.FromSeconds(5);
+var relayClientTimeoutInterval = TimeSpan.FromSeconds(15);
+
 GatewayEnvironmentLoader.LoadFromRepositoryRoot();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -40,6 +43,9 @@ builder.Services.AddCors(options =>
 builder.Services.AddSignalR(options =>
 {
     options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
+    options.KeepAliveInterval = relayKeepAliveInterval;
+    options.ClientTimeoutInterval = relayClientTimeoutInterval;
+    options.HandshakeTimeout = relayClientTimeoutInterval;
 });
 builder.Services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
 builder.Services.AddGatewayManagementInfrastructure(builder.Configuration);

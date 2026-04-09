@@ -90,6 +90,10 @@ export function useNewSessionDraftSync() {
   useEffect(() => {
     const nextAvailablePath = selectedNewSessionWorker?.availablePaths[0] ?? "";
 
+    if ((selectedNewSessionWorker?.availablePaths.length ?? 0) === 0) {
+      return;
+    }
+
     if (
       newSessionPath &&
       selectedNewSessionWorker?.availablePaths.includes(newSessionPath)
@@ -184,14 +188,17 @@ export function useSessionActions() {
   const activeSessionId = useTerminalStore((state) => state.activeSessionId);
 
   const handleCreateSession = useCallback(async () => {
-    if (!newSessionWorkerId || !newSessionPath) {
+    const normalizedNewSessionPath = newSessionPath.trim();
+
+    if (!newSessionWorkerId || !normalizedNewSessionPath) {
       setManagementError("请选择 worker 和 path 后再创建 session。");
       return;
     }
 
     const traceId = createTraceId();
     const displayName =
-      newSessionDisplayName.trim() || `${getPathLabel(newSessionPath)} session`;
+      newSessionDisplayName.trim() ||
+      `${getPathLabel(normalizedNewSessionPath)} session`;
 
     try {
       setIsCreatingSession(true);
@@ -199,7 +206,7 @@ export function useSessionActions() {
 
       const session = await managementClient.createSession({
         workerId: newSessionWorkerId,
-        workingDirectory: newSessionPath,
+        workingDirectory: normalizedNewSessionPath,
         displayName,
         agentFamily: newSessionAgentFamily,
         traceId,

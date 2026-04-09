@@ -222,8 +222,19 @@ export function NewSessionPage({
                   </SelectContent>
                 </Select>
               ) : (
-                <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-3 py-3 text-sm text-gray-500">
-                  当前节点没有可用工作目录
+                <div className="space-y-2">
+                  <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-3 py-3 text-sm text-gray-500">
+                    当前节点不限制预设目录，请直接输入目标服务器上的绝对路径。
+                  </div>
+                  <Input
+                    type="text"
+                    value={selectedPath}
+                    onChange={(event) => onPathChange(event.target.value)}
+                    placeholder="例如：/Users/echo/workspace/CortexTerminal"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
                 </div>
               )}
             </label>

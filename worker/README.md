@@ -41,7 +41,7 @@
     - macOS / Linux：`curl -fsSL 'https://<gateway>/install-worker.sh?token=<iwk_token>' | bash`
     - Windows：`powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://<gateway>/install-worker.ps1?token=<iwk_token>').Content))"`
   - 脚本会下载最新 worker release，并对比安装包里的 `package-version.txt` 与当前已安装版本；如果发现更高版本则执行升级，如果版本相同则跳过重复安装。
-  - 升级时会尽量保留现有 `worker.env` 中的 `WORKER_ID`、`WORKER_DISPLAY_NAME`、`WORKER_USER_KEY` 等身份配置；Linux 会更新同一个 `systemd --user` service，macOS 会更新同一个 `launchd` agent，Windows 会更新同一个 Windows Service。
+  - 升级时会尽量保留现有 `worker.env` 中的 `WORKER_ID`、`WORKER_USER_KEY` 等身份配置；Linux 会更新同一个 `systemd --user` service，macOS 会更新同一个 `launchd` agent，Windows 会更新同一个 Windows Service。
 
 - GitHub Actions:
   - `.github/workflows/worker-package.yml` 会产出 `linux-x64`、`osx-arm64`、`win-x64` 三个平台安装包。

@@ -6,6 +6,8 @@ public interface IWorkerManagementService
 {
     Task<IReadOnlyList<WorkerNodeResponse>> ListAsync(CancellationToken cancellationToken);
 
+    Task<bool> ReconcilePresenceAsync(CancellationToken cancellationToken);
+
     Task<WorkerNodeResponse?> GetAsync(string workerId, CancellationToken cancellationToken);
 
     Task<bool> DeleteOfflineAsync(string workerId, CancellationToken cancellationToken);

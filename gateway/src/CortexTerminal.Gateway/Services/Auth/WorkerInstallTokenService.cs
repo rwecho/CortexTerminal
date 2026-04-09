@@ -52,7 +52,7 @@ public sealed class WorkerInstallTokenService(
             return null;
         }
 
-        var payloadJson = await database.StringGetDeleteAsync(BuildRedisKey(normalizedToken));
+        var payloadJson = await database.StringGetAsync(BuildRedisKey(normalizedToken));
         if (payloadJson.IsNullOrEmpty)
         {
             return null;

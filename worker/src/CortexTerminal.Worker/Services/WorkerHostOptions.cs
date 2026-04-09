@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using CortexTerminal.Worker.Services.Sessions;
+using Microsoft.AspNetCore.Http.Connections;
 
 namespace CortexTerminal.Worker.Services;
 
@@ -14,28 +15,32 @@ public sealed record WorkerHostOptions(
     string WorkerTokenCachePath,
     string? WorkerUserKey,
     string HubUrl,
+    HttpTransportType WorkerHubTransport,
     LogLevel WorkerLogLevel,
     TimeSpan WorkerHeartbeatInterval,
     WorkerSessionMaintenanceOptions WorkerSessionMaintenance)
 {
+    private static readonly HttpTransportType DefaultWorkerHubTransport = HttpTransportType.WebSockets | HttpTransportType.ServerSentEvents | HttpTransportType.LongPolling;
+    private static readonly TimeSpan DefaultWorkerHeartbeatInterval = TimeSpan.FromSeconds(5);
+    private static readonly WorkerSessionMaintenanceOptions DefaultWorkerSessionMaintenance = new(
+        TimeSpan.FromMinutes(20),
+        TimeSpan.FromMinutes(2),
+        TimeSpan.FromSeconds(30),
+        true);
+
     public static WorkerHostOptions LoadFromEnvironment()
     {
-        var workerId = Environment.GetEnvironmentVariable("WORKER_ID") ?? "worker-1";
+        var workerId = ResolveWorkerId(Environment.GetEnvironmentVariable("WORKER_ID"));
         var gatewayBaseUrl = Environment.GetEnvironmentVariable("GATEWAY_BASE_URL") ?? "http://localhost:5050";
-        var workerDisplayName = Environment.GetEnvironmentVariable("WORKER_DISPLAY_NAME") ?? workerId;
         var workerSupportedAgentFamilies = WorkerRuntimeCatalog.ResolveSupportedAgentFamilies(
             Environment.GetEnvironmentVariable("WORKER_SUPPORTED_AGENT_FAMILIES"));
         var workerRuntimeCommand = WorkerRuntimeCatalog.ResolveDefaultRuntimeCommand(
             workerSupportedAgentFamilies,
-            Environment.GetEnvironmentVariable("WORKER_RUNTIME_COMMAND"),
-            Environment.GetEnvironmentVariable("WORKER_MODEL_NAME"));
+            null);
         var workerModelName = WorkerRuntimeCatalog.ResolveWorkerModelName(
-            Environment.GetEnvironmentVariable("WORKER_MODEL_NAME"),
+            null,
             workerSupportedAgentFamilies,
             workerRuntimeCommand);
-        var workerAvailablePaths = ParseAvailablePaths(
-            Environment.GetEnvironmentVariable("WORKER_AVAILABLE_PATHS"),
-            Environment.CurrentDirectory);
         var workerTokenCachePath = Environment.GetEnvironmentVariable("WORKER_TOKEN_CACHE_PATH")
             ?? WorkerGatewayAccessTokenManager.ResolveDefaultCachePath(gatewayBaseUrl, workerId);
         var workerUserKey = Environment.GetEnvironmentVariable("WORKER_USER_KEY");
@@ -43,28 +48,45 @@ public sealed record WorkerHostOptions(
         var workerLogLevel = ParseLogLevel(
             Environment.GetEnvironmentVariable("WORKER_LOG_LEVEL")
             ?? Environment.GetEnvironmentVariable("LOG_LEVEL"));
-        var workerHeartbeatInterval = ParseHeartbeatInterval(
-            Environment.GetEnvironmentVariable("WORKER_HEARTBEAT_INTERVAL_SECONDS"));
-        var workerSessionMaintenance = new WorkerSessionMaintenanceOptions(
-            ParseConfiguredInterval(Environment.GetEnvironmentVariable("WORKER_SESSION_IDLE_TIMEOUT_SECONDS"), TimeSpan.FromMinutes(20)),
-            ParseConfiguredInterval(Environment.GetEnvironmentVariable("WORKER_SESSION_DISCONNECTED_GRACE_SECONDS"), TimeSpan.FromMinutes(2)),
-            ParseConfiguredInterval(Environment.GetEnvironmentVariable("WORKER_SESSION_SWEEP_INTERVAL_SECONDS"), TimeSpan.FromSeconds(30)),
-            ParseBoolean(Environment.GetEnvironmentVariable("WORKER_CLOSE_GATEWAY_SESSION_ON_CLEANUP"), true));
 
         return new WorkerHostOptions(
             workerId,
             gatewayBaseUrl,
-            workerDisplayName,
+            workerId,
             workerModelName,
             workerRuntimeCommand,
             workerSupportedAgentFamilies,
-            workerAvailablePaths,
+            [],
             workerTokenCachePath,
             workerUserKey,
             hubUrl,
+            DefaultWorkerHubTransport,
             workerLogLevel,
-            workerHeartbeatInterval,
-            workerSessionMaintenance);
+            DefaultWorkerHeartbeatInterval,
+            DefaultWorkerSessionMaintenance);
+    }
+
+    private static string ResolveWorkerId(string? configuredWorkerId)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredWorkerId))
+        {
+            return configuredWorkerId.Trim();
+        }
+
+        var hostName = Environment.MachineName;
+        var normalizedHostName = string.Concat(
+            hostName
+                .Trim()
+                .ToLowerInvariant()
+                .Select(character => char.IsLetterOrDigit(character) ? character : '-'))
+            .Trim('-');
+
+        if (string.IsNullOrWhiteSpace(normalizedHostName))
+        {
+            normalizedHostName = "worker";
+        }
+
+        return $"{normalizedHostName}-{Guid.NewGuid():N}"[..Math.Min(normalizedHostName.Length + 7, normalizedHostName.Length + 1 + 6)];
     }
 
     private static LogLevel ParseLogLevel(string? value)
@@ -74,45 +96,4 @@ public sealed record WorkerHostOptions(
             : LogLevel.Information;
     }
 
-    private static TimeSpan ParseHeartbeatInterval(string? value)
-    {
-        if (int.TryParse(value, out var seconds) && seconds > 0)
-        {
-            return TimeSpan.FromSeconds(seconds);
-        }
-
-        return TimeSpan.FromSeconds(30);
-    }
-
-    private static TimeSpan ParseConfiguredInterval(string? value, TimeSpan fallback)
-    {
-        if (int.TryParse(value, out var seconds) && seconds >= 0)
-        {
-            return TimeSpan.FromSeconds(seconds);
-        }
-
-        return fallback;
-    }
-
-    private static bool ParseBoolean(string? value, bool fallback)
-    {
-        return bool.TryParse(value, out var parsed) ? parsed : fallback;
-    }
-
-    private static string[] ParseAvailablePaths(string? value, string fallbackPath)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return [Path.GetFullPath(fallbackPath)];
-        }
-
-        var paths = value
-            .Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries)
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Select(Path.GetFullPath)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return paths.Length == 0 ? [Path.GetFullPath(fallbackPath)] : paths;
-    }
 }

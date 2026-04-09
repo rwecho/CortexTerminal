@@ -114,6 +114,89 @@ public sealed class WorkerManagementServiceTests
     }
 
     [Fact]
+    public async Task GetAsync_WithExpiredPresence_RemovesPresenceAndReturnsOffline()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new WorkerManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-expired",
+            DisplayName = "Worker Expired",
+            State = WorkerLifecycleState.Online,
+            CurrentConnectionId = "conn-expired",
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
+        });
+        await dbContext.SaveChangesAsync();
+
+        presenceStore.SetWorkerPresence(
+            "worker-expired",
+            "conn-expired",
+            DateTime.UtcNow - WorkerPresencePolicy.MaxWorkerSilence - TimeSpan.FromSeconds(5));
+
+        var worker = await service.GetAsync("worker-expired", CancellationToken.None);
+
+        Assert.NotNull(worker);
+        Assert.False(worker.IsOnline);
+        Assert.Null(await presenceStore.GetWorkerPresenceAsync("worker-expired", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReconcilePresenceAsync_WithExpiredPresence_DisconnectsWorkerSessionsAndPublishesEvents()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new WorkerManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-reconcile",
+            DisplayName = "Worker Reconcile",
+            State = WorkerLifecycleState.Online,
+            CurrentConnectionId = "conn-reconcile",
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
+        });
+        dbContext.Sessions.Add(new CortexTerminal.Gateway.Models.Sessions.GatewaySessionRecord
+        {
+            SessionId = "session-reconcile",
+            WorkerId = "worker-reconcile",
+            DisplayName = "Session Reconcile",
+            WorkingDirectory = "/workspace/reconcile",
+            State = CortexTerminal.Gateway.Models.Sessions.SessionLifecycleState.Active,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        });
+        await dbContext.SaveChangesAsync();
+
+        presenceStore.SetWorkerPresence(
+            "worker-reconcile",
+            "conn-reconcile",
+            DateTime.UtcNow - WorkerPresencePolicy.MaxWorkerSilence - TimeSpan.FromSeconds(5));
+
+        var changed = await service.ReconcilePresenceAsync(CancellationToken.None);
+
+        Assert.True(changed);
+
+        var worker = await dbContext.Workers.SingleAsync(candidate => candidate.WorkerId == "worker-reconcile");
+        Assert.Equal(WorkerLifecycleState.Offline, worker.State);
+        Assert.Null(worker.CurrentConnectionId);
+
+        var session = await dbContext.Sessions.SingleAsync(candidate => candidate.SessionId == "session-reconcile");
+        Assert.Equal(CortexTerminal.Gateway.Models.Sessions.SessionLifecycleState.Disconnected, session.State);
+        Assert.Equal(1, eventPublisher.WorkersChangedCount);
+        Assert.Equal(1, eventPublisher.SessionsChangedCount);
+        Assert.Null(await presenceStore.GetWorkerPresenceAsync("worker-reconcile", CancellationToken.None));
+        Assert.Null(await presenceStore.GetSessionPresenceAsync("session-reconcile", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task UpsertAsync_PreservesAvailablePathTrailingWhitespace()
     {
         await using var dbContext = CreateDbContext();
@@ -189,6 +272,11 @@ public sealed class WorkerManagementServiceTests
         {
             workerPresence[workerId] = new WorkerPresenceSnapshot(workerId, connectionId, DateTime.UtcNow);
             return Task.CompletedTask;
+        }
+
+        public void SetWorkerPresence(string workerId, string connectionId, DateTime lastSeenUtc)
+        {
+            workerPresence[workerId] = new WorkerPresenceSnapshot(workerId, connectionId, lastSeenUtc);
         }
 
         public Task MarkWorkerOfflineAsync(string workerId, CancellationToken cancellationToken)

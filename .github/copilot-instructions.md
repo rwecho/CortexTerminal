@@ -47,6 +47,7 @@ For target folder conventions and engineering rules, follow `docs/PROJECT-STRUCT
 - Frontend state strategy: use local React state only for ephemeral UI state; use a dedicated store layer for cross-view/session state. If Zustand is introduced, keep stores in feature-scoped `store/` folders and avoid embedding business rules directly in components.
 - Gateway/Worker: keep startup/bootstrap in `Program.cs`, move runtime orchestration into dedicated services, session coordinators, protocol handlers, and hosted services.
 - Tests should mirror runtime structure so every new service/hook/protocol adapter has an obvious test location.
+- Do not add fallback behavior, polling recovery, degraded-mode paths, or similar “兜底” logic to the mainline product flow unless the user explicitly asks for that specific strategy. Fix the primary path first; no self-directed resilience features.
 
 ## Build and Test
 

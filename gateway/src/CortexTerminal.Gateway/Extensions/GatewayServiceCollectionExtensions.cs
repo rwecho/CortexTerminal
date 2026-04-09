@@ -51,6 +51,7 @@ public static class GatewayServiceCollectionExtensions
         services.AddScoped<IWorkerManagementService, WorkerManagementService>();
         services.AddScoped<IWorkerPresenceStore, RedisWorkerPresenceStore>();
         services.AddSingleton<IManagementEventPublisher, ManagementHubEventPublisher>();
+        services.AddHostedService<WorkerPresenceSweepService>();
 
         return services;
     }

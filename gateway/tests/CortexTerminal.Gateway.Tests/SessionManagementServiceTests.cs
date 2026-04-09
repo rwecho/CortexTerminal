@@ -84,6 +84,46 @@ public sealed class SessionManagementServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_WithExpiredPresence_ThrowsOfflineErrorAndClearsPresence()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new SessionManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-stale",
+            DisplayName = "Worker Stale",
+            State = WorkerLifecycleState.Online,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-3),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-3)
+        });
+        await dbContext.SaveChangesAsync();
+
+        presenceStore.SetWorkerPresence(
+            "worker-stale",
+            "conn-stale",
+            DateTime.UtcNow - WorkerPresencePolicy.MaxWorkerSilence - TimeSpan.FromSeconds(5));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CreateAsync(
+                new CreateGatewaySessionRequest(
+                    null,
+                    null,
+                    "worker-stale",
+                    "Stale Session",
+                    "claude",
+                    "/workspace/stale",
+                    null),
+                CancellationToken.None));
+
+        Assert.Contains("offline", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(await presenceStore.GetWorkerPresenceAsync("worker-stale", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task CreateAsync_WithUndetectedAgentFamily_StillAllowsSessionCreation()
     {
         await using var dbContext = CreateDbContext();
@@ -197,6 +237,11 @@ public sealed class SessionManagementServiceTests
         {
             workerPresence[workerId] = new WorkerPresenceSnapshot(workerId, connectionId, DateTime.UtcNow);
             return Task.CompletedTask;
+        }
+
+        public void SetWorkerPresence(string workerId, string connectionId, DateTime lastSeenUtc)
+        {
+            workerPresence[workerId] = new WorkerPresenceSnapshot(workerId, connectionId, lastSeenUtc);
         }
 
         public Task MarkWorkerOfflineAsync(string workerId, CancellationToken cancellationToken)
