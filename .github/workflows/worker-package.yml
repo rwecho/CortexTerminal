@@ -13,9 +13,8 @@ env:
   DOTNET_VERSION: 10.0.103
   WORKER_PROJECT: worker/src/CortexTerminal.Worker/CortexTerminal.Worker.csproj
   NSSM_PACKAGE_VERSION: 2.24.101.20180116
-  NSSM_ARCHIVE_BASENAME: nssm-2.24-101-g897c7ad
-  NSSM_ARCHIVE_URL: https://www.nssm.cc/ci/nssm-2.24-101-g897c7ad.zip
-  NSSM_ARCHIVE_SHA256: 99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8
+  NSSM_BINARY_PATH: worker/third_party/nssm/win64/nssm.exe
+  NSSM_BINARY_SHA256: EEE9C44C29C2BE011F1F1E43BB8C3FCA888CB81053022EC5A0060035DE16D848
 
 jobs:
   package-linux-x64:
@@ -139,34 +138,22 @@ jobs:
 
           Set-Content -Path 'artifacts/worker/win-x64/package-version.txt' -Value $packageVersion -Encoding UTF8
 
-      - name: Bundle pinned NSSM into win-x64 package
+      - name: Bundle vendored NSSM into win-x64 package
         shell: pwsh
         run: |
-          $archivePath = Join-Path $env:RUNNER_TEMP ("$env:NSSM_ARCHIVE_BASENAME.zip")
-          $extractRoot = Join-Path $env:RUNNER_TEMP $env:NSSM_ARCHIVE_BASENAME
-          Invoke-WebRequest -UseBasicParsing -Uri $env:NSSM_ARCHIVE_URL -OutFile $archivePath
-
-          $archiveHash = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToUpperInvariant()
-          if ($archiveHash -ne $env:NSSM_ARCHIVE_SHA256) {
-            throw "Pinned NSSM checksum mismatch. Expected $env:NSSM_ARCHIVE_SHA256 but got $archiveHash"
+          $nssmSource = $env:NSSM_BINARY_PATH
+          if (-not (Test-Path $nssmSource)) {
+            throw "Vendored NSSM binary was not found in the repository: $nssmSource"
           }
 
-          if (Test-Path $extractRoot) {
-            Remove-Item -Recurse -Force $extractRoot
-          }
-
-          Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
-
-          $nssmBinary = Get-ChildItem -Path $extractRoot -Recurse -File -Filter 'nssm.exe' |
-            Where-Object { $_.FullName -match '[\\/]win64[\\/]nssm\.exe$' } |
-            Select-Object -First 1
-          if (-not $nssmBinary) {
-            throw "Pinned NSSM archive did not contain win64/nssm.exe under extract root: $extractRoot"
+          $binaryHash = (Get-FileHash -Algorithm SHA256 -Path $nssmSource).Hash.ToUpperInvariant()
+          if ($binaryHash -ne $env:NSSM_BINARY_SHA256) {
+            throw "Vendored NSSM checksum mismatch. Expected $env:NSSM_BINARY_SHA256 but got $binaryHash"
           }
 
           $destination = 'artifacts/worker/win-x64/tools/nssm'
           New-Item -ItemType Directory -Force -Path $destination | Out-Null
-          Copy-Item $nssmBinary.FullName (Join-Path $destination 'nssm.exe') -Force
+          Copy-Item $nssmSource (Join-Path $destination 'nssm.exe') -Force
           Copy-Item 'worker/third_party/nssm/LICENSE.txt' (Join-Path $destination 'LICENSE.txt') -Force
           Copy-Item 'worker/third_party/nssm/VERIFICATION.txt' (Join-Path $destination 'VERIFICATION.txt') -Force
           Copy-Item 'worker/THIRD_PARTY_NOTICES.md' 'artifacts/worker/win-x64/THIRD_PARTY_NOTICES.md' -Force

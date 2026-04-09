@@ -5,9 +5,10 @@
 - Component: NSSM - the Non-Sucking Service Manager
 - Usage in this module: bundled only in the Windows worker package to register and run Cortex Terminal Worker as a Windows Service
 - Bundled binary path: `tools/nssm/nssm.exe`
+- Vendored repository source: `worker/third_party/nssm/win64/nssm.exe`
 - Pinned package version: `2.24.101.20180116`
-- Pinned upstream archive: `https://www.nssm.cc/ci/nssm-2.24-101-g897c7ad.zip`
-- Pinned SHA256: `99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8`
+- Vendored binary SHA256: `EEE9C44C29C2BE011F1F1E43BB8C3FCA888CB81053022EC5A0060035DE16D848`
+- Provenance reference archive: `https://www.nssm.cc/ci/nssm-2.24-101-g897c7ad.zip`
 - License status: public domain
 
 Archived references:

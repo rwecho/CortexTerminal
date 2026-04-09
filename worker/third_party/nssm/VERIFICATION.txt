@@ -4,16 +4,19 @@ Verification is intended to assist maintainers and reviewers in verifying that t
 
 Bundled component: NSSM - the Non-Sucking Service Manager
 Pinned package version: 2.24.101.20180116
-Pinned upstream archive: https://www.nssm.cc/ci/nssm-2.24-101-g897c7ad.zip
-Pinned checksum type: SHA256
-Pinned checksum: 99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8
+Vendored repository path: worker/third_party/nssm/win64/nssm.exe
+Vendored binary checksum type: SHA256
+Vendored binary checksum: EEE9C44C29C2BE011F1F1E43BB8C3FCA888CB81053022EC5A0060035DE16D848
 Bundled binary path inside the Windows worker package: tools/nssm/nssm.exe
+Provenance reference archive: https://www.nssm.cc/ci/nssm-2.24-101-g897c7ad.zip
+Provenance archive checksum type: SHA256
+Provenance archive checksum: 99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8
 
 How to verify manually:
-1. Download the upstream archive from the pinned URL above.
-2. Compute the SHA256 checksum using Get-FileHash or another trusted checksum tool.
-3. Confirm the checksum matches the pinned value in this file.
-4. Extract the archive and verify the bundled binary comes from `win64/nssm.exe`.
+1. Compute the SHA256 checksum of `worker/third_party/nssm/win64/nssm.exe` using Get-FileHash or another trusted checksum tool.
+2. Confirm the checksum matches the vendored binary checksum in this file.
+3. During package verification, confirm the Windows worker bundle contains `tools/nssm/nssm.exe`, `tools/nssm/LICENSE.txt`, and `tools/nssm/VERIFICATION.txt`.
+4. For provenance review, compare the vendored binary against the original `win64/nssm.exe` from the reference archive above when that upstream source is available.
 
 License archive source:
 - This LICENSE.txt is archived from the Chocolatey community package source for NSSM.
