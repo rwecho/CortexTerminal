@@ -276,17 +276,18 @@ test("new session flow creates a session and enters terminal shell", async ({
   });
 });
 
-test("worker runner auth page issues install command", async ({ page }) => {
+test("worker install page issues install command", async ({ page }) => {
   await mockAuthenticatedShell(page);
-  await page.goto("/settings/worker-auth");
+  await page.goto("/");
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("button", { name: "安装 Worker" }).click();
 
   await expect(
-    page.getByRole("heading", { name: "创建 Worker" }),
+    page.getByRole("heading", { name: "安装 Worker" }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "生成安装命令" }).click();
 
-  await expect(page.getByText("iwk_PLAYWR1")).toBeVisible();
   await expect(
     page.getByText(/install-worker\.sh\?token=iwk_PLAYWR1/),
   ).toBeVisible();

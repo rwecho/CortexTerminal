@@ -97,7 +97,7 @@ export function SettingsPage({
                   Worker 节点
                 </div>
                 <div className="text-[11px] text-gray-500">
-                  生成密钥并查看启动命令。
+                  生成一条安装命令，在电脑上一键接入 Worker。
                 </div>
               </div>
             </div>
@@ -109,7 +109,7 @@ export function SettingsPage({
               className="w-full justify-start"
             >
               <Fingerprint size={18} className="text-cyan-400" />
-              创建 / 管理 Worker
+              安装 Worker
             </Button>
 
             <Button

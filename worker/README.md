@@ -34,8 +34,9 @@
 
 ## 打包与安装 Package + install
 
-- Gateway one-liner install（推荐）:
-  - 登录 mobile 后生成 install command
+- 推荐安装方式（对终端用户 only one path）:
+  - 登录 mobile，进入 `安装 Worker`
+  - 生成安装命令
   - 在电脑执行：`curl -fsSL 'https://<gateway>/install-worker.sh?token=<iwk_token>' | bash`
   - 脚本会下载最新 worker release、写默认 `worker.env`、并直接启动 worker
 
@@ -46,10 +47,8 @@
   - `scripts/install-worker.sh`
   - `scripts/install-worker.ps1`
   - `scripts/worker.env.example`
-- Unix/macOS 安装：
-  - 解压后执行 `./scripts/install-worker.sh --install-dir ~/.cortex-terminal/worker --force`
-- Windows 安装：
-  - 解压后执行 `pwsh -File .\scripts\install-worker.ps1 -InstallDir "$HOME/.cortex-terminal/worker" -Force`
-- 安装完成后：
-  - 编辑 `config/worker.env`
-  - 使用生成的 `run-worker.sh` 或 `run-worker.ps1` 启动 worker
+- 内部 / 运维 fallback（非终端用户 onboarding）:
+  - 仅在离线分发、手工排障或 operator 场景下，才直接使用安装包里的脚本。
+  - Unix/macOS：`./scripts/install-worker.sh --install-dir ~/.cortex-terminal/worker --force`
+  - Windows：`pwsh -File .\scripts\install-worker.ps1 -InstallDir "$HOME/.cortex-terminal/worker" -Force`
+  - 手工安装后，如需调整配置，可编辑 `config/worker.env`，再使用生成的 `run-worker.sh` 或 `run-worker.ps1` 启动 worker。

@@ -97,8 +97,7 @@ export function NewSessionPage({
             <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-4 py-3 text-sm text-gray-300">
               <div className="font-medium text-white">没有节点？</div>
               <div className="mt-1 text-[12px] text-gray-400">
-                先生成安装命令，然后在电脑上执行一行 install-worker.sh
-                即可接入。
+                先生成唯一的安装命令，然后在电脑终端执行一次即可接入。
               </div>
               <Button
                 type="button"
@@ -106,7 +105,7 @@ export function NewSessionPage({
                 onClick={onOpenWorkerGuide}
                 className="mt-3"
               >
-                去创建 Worker
+                去安装 Worker
               </Button>
             </div>
 

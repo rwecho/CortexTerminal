@@ -41,6 +41,15 @@
 - Run Playwright e2e:
   - `cd mobile && npm run test:e2e`
 
+## Worker onboarding
+
+- 面向终端用户，mobile 只保留一种 Worker 接入方式：
+  - 进入设置页的 `安装 Worker`
+  - 生成一条安装命令
+  - 在电脑终端执行该命令完成安装与首次启动
+- 示例：`curl -fsSL 'https://<gateway>/install-worker.sh?token=<iwk_token>' | bash`
+- token / registration key 等细节属于 gateway / worker 内部实现，mobile UI 不再把它们作为独立操作路径暴露给用户。
+
 ## MAUI shell notes
 
 - React static assets are copied into `maui/CortexTerminal.MobileShell/Resources/Raw/wwwroot`.

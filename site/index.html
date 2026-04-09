@@ -151,12 +151,11 @@ $ cortex session start
         <section id="worker" class="section worker-section">
           <div class="section-heading">
             <span class="eyebrow">Worker Onboarding</span>
-            <h2>短 install token + 一条命令接入 Worker</h2>
+            <h2>一条命令接入 Worker</h2>
             <p>
-              在 mobile 里生成短期 install token
-              后，直接复制下面这一条命令到你的电脑执行。 脚本会自动下载 worker
-              release、写默认配置、向 gateway 换取 registration key，并启动首个
-              worker。
+              在 mobile 里点击“安装
+              Worker”并生成安装命令后，直接复制下面这一条命令到你的电脑执行。
+              脚本会自动下载 worker release、写默认配置并启动首个 worker。
             </p>
           </div>
 
@@ -171,10 +170,12 @@ $ cortex session start
 
           <div class="worker-notes">
             <div>
-              <h3>为什么是短 token？</h3>
+              <h3>为什么只保留一条命令？</h3>
               <p>
-                它是一次性 install token，不是长期 access
-                token。短期、一次性、服务端存状态，既更安全也更适合复制粘贴。
+                因为 onboarding
+                的目标是可复制、可解释、可成功执行。对终端用户来说，只需要“生成命令
+                → 在电脑执行”这一条路径，不需要理解额外的 token、key
+                或多种安装模式。
               </p>
             </div>
             <div>

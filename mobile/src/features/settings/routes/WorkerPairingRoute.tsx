@@ -6,20 +6,8 @@ import { buildAppPath } from "../../app/routeUtils";
 
 export function WorkerPairingRoute() {
   const navigate = useNavigate();
-  const workerInstallToken = useWorkerPairingStore(
-    (state) => state.workerInstallToken,
-  );
   const workerInstallCommand = useWorkerPairingStore(
     (state) => state.workerInstallCommand,
-  );
-  const workerInstallUrl = useWorkerPairingStore(
-    (state) => state.workerInstallUrl,
-  );
-  const workerInstallIssuedAtUtc = useWorkerPairingStore(
-    (state) => state.workerInstallIssuedAtUtc,
-  );
-  const workerInstallExpiresAtUtc = useWorkerPairingStore(
-    (state) => state.workerInstallExpiresAtUtc,
   );
   const workerInstallError = useWorkerPairingStore(
     (state) => state.workerInstallError,
@@ -31,11 +19,7 @@ export function WorkerPairingRoute() {
 
   return (
     <WorkerPairingPage
-      workerInstallToken={workerInstallToken}
       workerInstallCommand={workerInstallCommand}
-      workerInstallUrl={workerInstallUrl}
-      workerInstallIssuedAtUtc={workerInstallIssuedAtUtc}
-      workerInstallExpiresAtUtc={workerInstallExpiresAtUtc}
       workerInstallError={workerInstallError}
       isIssuingWorkerInstallToken={isIssuingWorkerInstallToken}
       onBack={() => navigate(buildAppPath("settings"))}

@@ -22,14 +22,6 @@ export type RegisterGatewayUserPayload = {
   email?: string;
 };
 
-export type WorkerRegistrationKey = {
-  registrationKey: string;
-  subject: string;
-  username?: string | null;
-  displayName: string;
-  issuedAtUtc: string;
-};
-
 export type WorkerInstallToken = {
   token: string;
   issuedAtUtc: string;
@@ -150,26 +142,6 @@ export function createGatewayAuthClient(gatewayBaseUrl: string) {
         });
 
         return readJsonOrThrow<GatewayPrincipal>(response);
-      } catch (error) {
-        throw normalizeGatewayRequestError(error, normalizedBaseUrl);
-      }
-    },
-
-    async issueWorkerRegistrationKey(
-      accessToken: string,
-    ): Promise<WorkerRegistrationKey> {
-      try {
-        const response = await fetch(
-          `${normalizedBaseUrl}/api/auth/worker/key`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
-        );
-
-        return readJsonOrThrow<WorkerRegistrationKey>(response);
       } catch (error) {
         throw normalizeGatewayRequestError(error, normalizedBaseUrl);
       }
