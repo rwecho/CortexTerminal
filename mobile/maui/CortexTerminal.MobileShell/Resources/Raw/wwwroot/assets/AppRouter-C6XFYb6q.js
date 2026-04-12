@@ -1,0 +1,1 @@
+import{s as t,j as s}from"./index-DCAkfHxm.js";import{H as o,B as u}from"./chunk-QFMPRPBF-BiqBfPjr.js";function p({children:r}){return t()?s.jsx(o,{children:r}):s.jsx(u,{children:r})}export{p as AppRouter};

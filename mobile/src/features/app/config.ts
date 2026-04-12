@@ -16,3 +16,5 @@ export function getAppVersionLabel(): string {
 }
 
 export const gatewayTokenStorageKey = "cortex-terminal.gateway.accessToken";
+export const gatewayAuthSessionStorageKey =
+  "cortex-terminal.gateway.authSession";

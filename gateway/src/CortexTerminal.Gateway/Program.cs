@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using CortexTerminal.Gateway.Extensions;
 using CortexTerminal.Gateway.Hubs;
@@ -46,6 +47,12 @@ builder.Services.AddSignalR(options =>
     options.KeepAliveInterval = relayKeepAliveInterval;
     options.ClientTimeoutInterval = relayClientTimeoutInterval;
     options.HandshakeTimeout = relayClientTimeoutInterval;
+})
+.AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    options.PayloadSerializerOptions.PropertyNameCaseInsensitive = true;
+    options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 builder.Services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
 builder.Services.AddGatewayManagementInfrastructure(builder.Configuration);

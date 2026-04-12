@@ -14,8 +14,9 @@ import {
   allAgentFamilies,
   buildSessionBootLogs,
   createTraceId,
+  doesWorkerSupportAgentFamily,
   getWorkerSupportedAgentFamilies,
-  getPathLabel,
+  isPathWithinRoots,
 } from "../../app/appUtils";
 import { buildSessionAccessError } from "../../terminal/terminalUtils";
 
@@ -39,14 +40,15 @@ export function useNewSessionDraftSync() {
   );
 
   const availableAgentFamilies = useMemo(() => {
-    const selectedWorker = workers.find(
-      (worker) => worker.workerId === newSessionWorkerId && worker.isOnline,
+    const onlineWorkers = workers.filter((worker) => worker.isOnline);
+    const families = onlineWorkers.flatMap((worker) =>
+      getWorkerSupportedAgentFamilies(worker),
     );
 
-    return selectedWorker
-      ? getWorkerSupportedAgentFamilies(selectedWorker)
+    return families.length > 0
+      ? allAgentFamilies.filter((agentFamily) => families.includes(agentFamily))
       : [...allAgentFamilies];
-  }, [newSessionWorkerId, workers]);
+  }, [workers]);
 
   const filteredNewSessionWorkers = useMemo(
     () => workers.filter((worker) => worker.isOnline),
@@ -62,17 +64,26 @@ export function useNewSessionDraftSync() {
   );
 
   useEffect(() => {
-    if (availableAgentFamilies.length === 0) {
+    const supportedAgentFamilies = selectedNewSessionWorker
+      ? getWorkerSupportedAgentFamilies(selectedNewSessionWorker)
+      : availableAgentFamilies;
+
+    if (supportedAgentFamilies.length === 0) {
       setNewSessionAgentFamily("claude");
       return;
     }
 
     setNewSessionAgentFamily(
-      availableAgentFamilies.includes(newSessionAgentFamily)
+      supportedAgentFamilies.includes(newSessionAgentFamily)
         ? newSessionAgentFamily
-        : availableAgentFamilies[0],
+        : supportedAgentFamilies[0],
     );
-  }, [availableAgentFamilies, newSessionAgentFamily, setNewSessionAgentFamily]);
+  }, [
+    availableAgentFamilies,
+    newSessionAgentFamily,
+    selectedNewSessionWorker,
+    setNewSessionAgentFamily,
+  ]);
 
   useEffect(() => {
     if (
@@ -96,7 +107,7 @@ export function useNewSessionDraftSync() {
 
     if (
       newSessionPath &&
-      selectedNewSessionWorker?.availablePaths.includes(newSessionPath)
+      isPathWithinRoots(newSessionPath, selectedNewSessionWorker.availablePaths)
     ) {
       return;
     }
@@ -141,7 +152,7 @@ export function useOpenSessionAction() {
         workers.find((candidate) => candidate.workerId === session.workerId) ??
         null;
 
-      if (!worker?.isOnline) {
+      if (!worker) {
         setManagementError(buildSessionAccessError(session, worker));
         setActiveSessionId(session.sessionId);
         return;
@@ -166,17 +177,11 @@ export function useSessionActions() {
     (state) => state.newSessionWorkerId,
   );
   const newSessionPath = useSessionsStore((state) => state.newSessionPath);
-  const newSessionDisplayName = useSessionsStore(
-    (state) => state.newSessionDisplayName,
-  );
   const setIsCreatingSession = useSessionsStore(
     (state) => state.setIsCreatingSession,
   );
   const setManagementError = useSessionsStore(
     (state) => state.setManagementError,
-  );
-  const setNewSessionDisplayName = useSessionsStore(
-    (state) => state.setNewSessionDisplayName,
   );
   const setIsDeletingSessionId = useSessionsStore(
     (state) => state.setIsDeletingSessionId,
@@ -188,17 +193,24 @@ export function useSessionActions() {
   const activeSessionId = useTerminalStore((state) => state.activeSessionId);
 
   const handleCreateSession = useCallback(async () => {
-    const normalizedNewSessionPath = newSessionPath.trim();
+    const hasConfiguredPath = newSessionPath.trim().length > 0;
+    const selectedWorker = useSessionsStore
+      .getState()
+      .workers.find((worker) => worker.workerId === newSessionWorkerId && worker.isOnline);
 
-    if (!newSessionWorkerId || !normalizedNewSessionPath) {
+    if (!newSessionWorkerId || !hasConfiguredPath || !selectedWorker) {
       setManagementError("请选择 worker 和 path 后再创建 session。");
       return;
     }
 
+    if (!doesWorkerSupportAgentFamily(selectedWorker, newSessionAgentFamily)) {
+      setManagementError(
+        `当前节点不支持 ${newSessionAgentFamily}，请切换到兼容的 worker。`,
+      );
+      return;
+    }
+
     const traceId = createTraceId();
-    const displayName =
-      newSessionDisplayName.trim() ||
-      `${getPathLabel(normalizedNewSessionPath)} session`;
 
     try {
       setIsCreatingSession(true);
@@ -206,8 +218,7 @@ export function useSessionActions() {
 
       const session = await managementClient.createSession({
         workerId: newSessionWorkerId,
-        workingDirectory: normalizedNewSessionPath,
-        displayName,
+        workingDirectory: newSessionPath,
         agentFamily: newSessionAgentFamily,
         traceId,
       });
@@ -220,12 +231,18 @@ export function useSessionActions() {
         : [...currentState.sessions, session];
 
       setOverviewData(currentState.workers, nextSessions);
-      setNewSessionDisplayName("");
-      openSession(session);
       await loadManagementData({
         showLoading: false,
         preserveError: true,
       });
+
+      const refreshedState = useSessionsStore.getState();
+      const resolvedSession =
+        refreshedState.sessions.find(
+          (candidate) => candidate.sessionId === session.sessionId,
+        ) ?? session;
+
+      window.location.assign(buildAppPath("terminal", resolvedSession.sessionId));
     } catch (error) {
       const message = (error as Error).message;
       if (!handleAuthFailure(message)) {
@@ -238,15 +255,12 @@ export function useSessionActions() {
     handleAuthFailure,
     loadManagementData,
     managementClient,
-    newSessionDisplayName,
     newSessionAgentFamily,
     newSessionPath,
     newSessionWorkerId,
-    openSession,
     setOverviewData,
     setIsCreatingSession,
     setManagementError,
-    setNewSessionDisplayName,
   ]);
 
   const handleDeleteSession = useCallback(

@@ -91,4 +91,21 @@ public sealed class WorkerRuntimeLaunchPlannerTests
             plan.CommandLine);
         Assert.Equal(["--resume", "session-123", "--fork-session"], plan.RuntimeArguments);
     }
+
+    [Fact]
+    public void ToPtyOptions_UsesDefaultTerminalDimensions()
+    {
+        var plan = new WorkerRuntimeLaunchPlan(
+            "/bin/bash",
+            "/tmp/entrypoint.sh",
+            "codex",
+            "/workspace/sample",
+            ["/tmp/entrypoint.sh", "--runtime", "codex"],
+            new Dictionary<string, string>());
+
+        var options = plan.ToPtyOptions();
+
+        Assert.Equal(120, options.Cols);
+        Assert.Equal(40, options.Rows);
+    }
 }

@@ -38,6 +38,7 @@ public static class MauiProgram
 
 		builder.Services.AddSingleton<MainPage>();
 		builder.Services.AddSingleton<AppShell>();
+		builder.Services.AddSingleton<NativeManagementRealtimeService>();
 		builder.Services.AddSingleton<NativeCapabilityBridge>();
 
 #if DEBUG

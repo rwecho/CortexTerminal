@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Runtime.InteropServices;
 
 namespace CortexTerminal.Worker.Services.Runtime;
@@ -130,12 +131,37 @@ public static class WorkerRuntimeLaunchPlanner
         string workingDirectory,
         string entrypointPlatform)
     {
-        return new Dictionary<string, string>(StringComparer.Ordinal)
+        var environment = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (DictionaryEntry variable in Environment.GetEnvironmentVariables())
         {
-            ["CT_RUNTIME_COMMAND"] = runtimeCommand,
-            ["CT_WORKING_DIRECTORY"] = workingDirectory,
-            ["CT_RUNTIME_ENTRYPOINT_PLATFORM"] = entrypointPlatform,
-        };
+            if (variable.Key is not string key || string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            if (variable.Value is not string value)
+            {
+                continue;
+            }
+
+            environment[key] = value;
+        }
+
+        environment["CT_RUNTIME_COMMAND"] = runtimeCommand;
+        environment["CT_WORKING_DIRECTORY"] = workingDirectory;
+        environment["CT_RUNTIME_ENTRYPOINT_PLATFORM"] = entrypointPlatform;
+
+        if (!environment.ContainsKey("TERM"))
+        {
+            environment["TERM"] = "xterm-256color";
+        }
+
+        if (!environment.ContainsKey("COLORTERM"))
+        {
+            environment["COLORTERM"] = "truecolor";
+        }
+
+        return environment;
     }
 
     private static void EnsureEntrypointExists(string entrypointPath)

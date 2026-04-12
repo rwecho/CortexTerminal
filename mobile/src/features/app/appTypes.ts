@@ -18,7 +18,7 @@ export type StatusItem = {
   icon: LucideIcon;
 };
 
-export type AgentFamily = "claude" | "codex" | "gemini" | "opencode";
+export type AgentFamily = "claude" | "codex" | "gemini" | "opencode" | "copilot";
 
 export type AgentOption = {
   id: AgentFamily;

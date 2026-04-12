@@ -1,4 +1,5 @@
 using CortexTerminal.Worker.Services;
+using CortexTerminal.Worker.Services.Runtime.Adapters;
 using CortexTerminal.Worker.Services.Sessions;
 
 namespace CortexTerminal.Worker.Tests;
@@ -81,6 +82,40 @@ public sealed class WorkerSessionCleanupPolicyTests
     }
 
     [Fact]
+    public void Evaluate_WhenReconnectGraceDisabled_CleansUpImmediately()
+    {
+        using var session = CreateSession();
+        var snapshot = CreateSnapshot(state: "Disconnected", updatedAtUtc: DateTime.UtcNow);
+
+        var decision = WorkerSessionCleanupPolicy.Evaluate(
+            session,
+            snapshot,
+            DefaultOptions with { DisconnectedGracePeriod = TimeSpan.Zero },
+            DateTimeOffset.UtcNow);
+
+        Assert.True(decision.ShouldCleanup);
+        Assert.True(decision.CloseGatewaySession);
+        Assert.Equal("reconnect-grace-disabled", decision.ReasonCode);
+    }
+
+    [Fact]
+    public void Evaluate_WhenGatewaySessionClosed_CleansUpWithoutClosingGatewaySessionAgain()
+    {
+        using var session = CreateSession();
+        var snapshot = CreateSnapshot(state: "Closed", updatedAtUtc: DateTime.UtcNow);
+
+        var decision = WorkerSessionCleanupPolicy.Evaluate(
+            session,
+            snapshot,
+            DefaultOptions,
+            DateTimeOffset.UtcNow);
+
+        Assert.True(decision.ShouldCleanup);
+        Assert.False(decision.CloseGatewaySession);
+        Assert.Equal("gateway-session-closed", decision.ReasonCode);
+    }
+
+    [Fact]
     public void Evaluate_WhenGatewaySessionMissing_CleansUpWithoutClosingGatewaySession()
     {
         using var session = CreateSession();
@@ -103,6 +138,7 @@ public sealed class WorkerSessionCleanupPolicyTests
             "Session 1",
             "/tmp/session-1",
             "claude",
+            new ClaudeWorkerRuntimeAdapter(),
             new FakePtyConnection(),
             new StreamReader(new MemoryStream()),
             new MemoryStream(),

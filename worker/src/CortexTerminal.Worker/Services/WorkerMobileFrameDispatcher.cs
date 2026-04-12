@@ -21,9 +21,12 @@ public sealed class WorkerMobileFrameDispatcher(
         var inbound = Encoding.UTF8.GetString(Convert.FromBase64String(encryptedFrameBase64));
         var hasAttachmentCommand = RelayAttachmentCommandProcessor.TryParseAttachmentCommand(inbound, out var attachmentCommand);
         var hasDoctorCommand = RelayAttachmentCommandProcessor.TryParseDoctorCommand(inbound, out _);
+        var hasTerminalResizeCommand = RelayAttachmentCommandProcessor.TryParseTerminalResizeCommand(inbound, out var terminalResizeCommand);
         ringBuffer.Append(
             hasDoctorCommand
                 ? $"[{DateTimeOffset.UtcNow:O}] mobile:{sessionId} => <doctor-command>"
+                : hasTerminalResizeCommand && terminalResizeCommand is not null
+                ? $"[{DateTimeOffset.UtcNow:O}] mobile:{sessionId} => <terminal-resize cols={terminalResizeCommand.Cols} rows={terminalResizeCommand.Rows}>"
                 : hasAttachmentCommand && attachmentCommand is not null
                 ? $"[{DateTimeOffset.UtcNow:O}] mobile:{sessionId} => <attachment-command attachments={attachmentCommand.Attachments.Count}>"
                 : $"[{DateTimeOffset.UtcNow:O}] mobile:{sessionId} => {inbound}");
@@ -64,6 +67,25 @@ public sealed class WorkerMobileFrameDispatcher(
 
         if (string.Equals(inbound.Trim(), "__ct_init__", StringComparison.OrdinalIgnoreCase))
         {
+            if (session.IsRuntimeReady || !session.RuntimeAdapter.RequiresPromptReadiness)
+            {
+                await sessionCoordinator.RelayTextFrameAsync(
+                    sessionId,
+                    $"__ct_ready__:{session.WorkingDirectory}\r\n",
+                    requestId,
+                    traceId,
+                    cancellationToken);
+            }
+            else
+            {
+                session.RegisterPendingReady(requestId, traceId);
+                logger.LogInformation(
+                    "[worker:runtime-prompt-pending] SessionId={SessionId}, Runtime={Runtime}, AgentFamily={AgentFamily}",
+                    sessionId,
+                    session.RuntimeCommand,
+                    session.RuntimeAdapter.AgentFamily);
+            }
+
             return;
         }
 
@@ -84,6 +106,22 @@ public sealed class WorkerMobileFrameDispatcher(
             return;
         }
 
+        if (hasTerminalResizeCommand && terminalResizeCommand is not null)
+        {
+            await sessionCoordinator.ResizeTerminalAsync(
+                session,
+                terminalResizeCommand.Cols,
+                terminalResizeCommand.Rows,
+                cancellationToken);
+            logger.LogInformation(
+                "[worker:terminal-resize] SessionId={SessionId}, Cols={Cols}, Rows={Rows}, Runtime={Runtime}",
+                sessionId,
+                terminalResizeCommand.Cols,
+                terminalResizeCommand.Rows,
+                session.RuntimeCommand);
+            return;
+        }
+
         if (hasAttachmentCommand && attachmentCommand is not null)
         {
             await HandleAttachmentCommandAsync(session, sessionId, attachmentCommand, requestId, traceId, cancellationToken);
@@ -92,7 +130,25 @@ public sealed class WorkerMobileFrameDispatcher(
 
         var forwardedInput = WorkerInputNormalizer.NormalizeAgentInput(inbound);
         logger.LogInformation("[agent:stdin] SessionId={SessionId}, Length={Length}, Runtime={Runtime}", sessionId, forwardedInput.Length, session.RuntimeCommand);
-        await sessionCoordinator.SendInputAsync(session, forwardedInput, cancellationToken);
+        try
+        {
+            await sessionCoordinator.SendInputAsync(session, forwardedInput, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (session.RuntimeAdapter.RequiresPromptReadiness && !session.IsRuntimeReady)
+        {
+            logger.LogWarning(
+                ex,
+                "[worker:runtime-input-before-ready] SessionId={SessionId}, Runtime={Runtime}, AgentFamily={AgentFamily}",
+                sessionId,
+                session.RuntimeCommand,
+                session.RuntimeAdapter.AgentFamily);
+            await sessionCoordinator.RelayTextFrameAsync(
+                sessionId,
+                "__ct_error__:Runtime is still starting. 请等待会话出现 ready 状态后再发送命令。\r\n",
+                requestId,
+                traceId,
+                cancellationToken);
+        }
     }
 
     private async Task HandleDoctorCommandAsync(

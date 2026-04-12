@@ -61,6 +61,32 @@ public static class RelayAttachmentCommandProcessor
         }
     }
 
+    public static bool TryParseTerminalResizeCommand(
+        string inbound,
+        out RelayTerminalResizeFrame? commandFrame)
+    {
+        commandFrame = null;
+
+        if (!inbound.StartsWith(RelayControlPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        try
+        {
+            commandFrame = JsonSerializer.Deserialize<RelayTerminalResizeFrame>(
+                inbound[RelayControlPrefix.Length..],
+                JsonSerializerOptions);
+
+            return commandFrame is { Kind: "terminal-resize", Cols: > 0, Rows: > 0 };
+        }
+        catch
+        {
+            commandFrame = null;
+            return false;
+        }
+    }
+
     public static async Task<IReadOnlyList<StagedRelayAttachment>> StageAttachmentsAsync(
         RelayAttachmentCommandFrame commandFrame,
         string workingDirectory,
@@ -221,3 +247,5 @@ public sealed record StagedRelayAttachment(
     long? DurationMs);
 
 public sealed record RelayDoctorCommandFrame(string Kind);
+
+public sealed record RelayTerminalResizeFrame(string Kind, int Cols, int Rows);

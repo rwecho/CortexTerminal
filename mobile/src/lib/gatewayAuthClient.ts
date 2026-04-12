@@ -125,6 +125,26 @@ export function createGatewayAuthClient(gatewayBaseUrl: string) {
       }
     },
 
+    async refresh(refreshToken: string): Promise<GatewayTokenResponse> {
+      try {
+        const response = await fetch(`${normalizedBaseUrl}/connect/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: toFormBody({
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+            scope: "gateway.api relay.connect offline_access",
+          }),
+        });
+
+        return readJsonOrThrow<GatewayTokenResponse>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, normalizedBaseUrl);
+      }
+    },
+
     async register(payload: RegisterGatewayUserPayload): Promise<void> {
       try {
         const response = await fetch(`${normalizedBaseUrl}/api/auth/register`, {

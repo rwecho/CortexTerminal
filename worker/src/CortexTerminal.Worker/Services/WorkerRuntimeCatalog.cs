@@ -2,7 +2,7 @@ namespace CortexTerminal.Worker.Services;
 
 public static class WorkerRuntimeCatalog
 {
-    private static readonly string[] KnownAgentFamilies = ["claude", "codex", "gemini", "opencode"];
+    private static readonly string[] KnownAgentFamilies = ["claude", "copilot", "codex", "gemini", "opencode"];
 
     public static IReadOnlyList<string> AllAgentFamilies => KnownAgentFamilies;
 
@@ -37,6 +37,11 @@ public static class WorkerRuntimeCatalog
         }
 
         var normalizedModelName = workerModelName?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(normalizedModelName) && normalizedModelName.Contains("copilot"))
+        {
+            return "copilot";
+        }
+
         if (!string.IsNullOrWhiteSpace(normalizedModelName) && normalizedModelName.Contains("codex"))
         {
             return "codex";
@@ -63,9 +68,15 @@ public static class WorkerRuntimeCatalog
 
     public static string ResolveRuntimeCommandForSession(string? requestedAgentFamily, string fallbackRuntimeCommand)
     {
+        if (LooksLikeConfiguredRuntimePath(fallbackRuntimeCommand))
+        {
+            return fallbackRuntimeCommand;
+        }
+
         var normalizedAgentFamily = NormalizeAgentFamily(requestedAgentFamily);
         return normalizedAgentFamily switch
         {
+            "copilot" => "copilot",
             "codex" => "codex",
             "gemini" => "gemini",
             "opencode" => "opencode",
@@ -120,6 +131,17 @@ public static class WorkerRuntimeCatalog
             .ToArray();
     }
 
+    private static bool LooksLikeConfiguredRuntimePath(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.Contains(Path.DirectorySeparatorChar)
+            || value.Contains(Path.AltDirectorySeparatorChar);
+    }
+
     private static string? NormalizeAgentFamily(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -133,10 +155,19 @@ public static class WorkerRuntimeCatalog
             return "opencode";
         }
 
+        if (normalized.Contains("github copilot", StringComparison.Ordinal)
+            || normalized.Contains("copilot cli", StringComparison.Ordinal)
+            || normalized.Contains("copilot", StringComparison.Ordinal))
+        {
+            return "copilot";
+        }
+
         return KnownAgentFamilies.Contains(normalized, StringComparer.Ordinal)
             ? normalized
             : normalized.Contains("codex", StringComparison.Ordinal)
                 ? "codex"
+                : normalized.Contains("copilot", StringComparison.Ordinal)
+                    ? "copilot"
                 : normalized.Contains("gemini", StringComparison.Ordinal)
                     ? "gemini"
                     : normalized.Contains("claude", StringComparison.Ordinal)

@@ -35,15 +35,13 @@ export function AuthScreen({
     <div className="flex h-screen flex-col items-center justify-center space-y-12 bg-black p-8">
       <div className="flex flex-col items-center gap-4">
         <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-cyan-600/30 bg-cyan-600/20">
-          <Fingerprint size={48} className="animate-pulse text-cyan-500" />
+          <Fingerprint size={48} className="text-cyan-500" />
         </div>
         <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tighter text-white italic">
-            CORTEX TERMINAL
+          <h1 className="text-2xl font-bold tracking-tight text-white">
+            Cortex Terminal
           </h1>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.3em] text-gray-500">
-            Secure Session Mesh
-          </p>
+          <p className="mt-1 text-sm text-gray-500">安全连接你的远程 AI 终端。</p>
         </div>
       </div>
 
@@ -73,7 +71,7 @@ export function AuthScreen({
 
         <div className="space-y-1">
           <label className="ml-2 text-[10px] font-bold uppercase text-gray-600">
-            Username
+            用户名
           </label>
           <input
             type="text"
@@ -86,7 +84,7 @@ export function AuthScreen({
 
         <div className="space-y-1">
           <label className="ml-2 text-[10px] font-bold uppercase text-gray-600">
-            Password
+            密码
           </label>
           <input
             type="password"
@@ -105,9 +103,9 @@ export function AuthScreen({
         {authMode === "register" && (
           <>
             <div className="space-y-1">
-              <label className="ml-2 text-[10px] font-bold uppercase text-gray-600">
-                Display Name
-              </label>
+                <label className="ml-2 text-[10px] font-bold uppercase text-gray-600">
+                  显示名称
+                </label>
               <input
                 type="text"
                 value={authDisplayName}
@@ -120,9 +118,9 @@ export function AuthScreen({
             </div>
 
             <div className="space-y-1">
-              <label className="ml-2 text-[10px] font-bold uppercase text-gray-600">
-                Email
-              </label>
+                <label className="ml-2 text-[10px] font-bold uppercase text-gray-600">
+                  Email
+                </label>
               <input
                 type="email"
                 value={authEmail}
@@ -157,10 +155,6 @@ export function AuthScreen({
               : "注册并进入"}
         </button>
       </div>
-
-      <p className="text-center font-mono text-[10px] leading-relaxed text-gray-700 uppercase">
-        product shell / multi-session / worker-directory routing
-      </p>
     </div>
   );
 }

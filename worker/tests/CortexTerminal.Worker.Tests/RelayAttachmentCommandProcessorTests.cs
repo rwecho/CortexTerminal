@@ -72,4 +72,18 @@ public sealed class RelayAttachmentCommandProcessorTests
         Assert.NotNull(frame);
         Assert.Equal("doctor-command", frame!.Kind);
     }
+
+    [Fact]
+    public void TryParseTerminalResizeCommand_WithValidEnvelope_ReturnsFrame()
+    {
+        const string inbound = "__ct_ctl__:{\"kind\":\"terminal-resize\",\"cols\":132,\"rows\":37}";
+
+        var parsed = RelayAttachmentCommandProcessor.TryParseTerminalResizeCommand(inbound, out var frame);
+
+        Assert.True(parsed);
+        Assert.NotNull(frame);
+        Assert.Equal("terminal-resize", frame!.Kind);
+        Assert.Equal(132, frame.Cols);
+        Assert.Equal(37, frame.Rows);
+    }
 }

@@ -6,7 +6,15 @@ public interface IWorkerRuntimeAdapter
 
     bool SupportsResume { get; }
 
+    bool RequiresPromptReadiness { get; }
+
+    TimeSpan PromptReadyFallbackDelay { get; }
+
     WorkerRuntimeLaunchPlan BuildFreshPlan(WorkerRuntimeLaunchRequest request);
 
     WorkerRuntimeLaunchPlan BuildResumePlan(WorkerRuntimeLaunchRequest request);
+
+    bool IsPromptReady(string transcript);
+
+    bool IsPromptBlocked(string transcript);
 }

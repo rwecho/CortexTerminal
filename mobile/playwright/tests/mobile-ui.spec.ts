@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const fakeAccessToken = "playwright-access-token";
 
@@ -73,6 +73,187 @@ type MockShellOverrides = {
   auditEntries?: typeof auditEntries;
 };
 
+type RelayStateSnapshot = {
+  connected: boolean;
+  connectCalls: Array<{
+    sessionId: string;
+    workerId: string;
+  }>;
+  sentFrames: Array<{
+    sessionId: string;
+    text: string;
+    requestId: string | null;
+    traceId: string | null;
+  }>;
+  disconnectCount: number;
+};
+
+async function installMockRelay(page: Page) {
+  await page.addInitScript(() => {
+    const decoder = new TextDecoder();
+
+    const state = {
+      connected: false,
+      connectCalls: [] as Array<{ sessionId: string; workerId: string }>,
+      sentFrames: [] as Array<{
+        sessionId: string;
+        text: string;
+        requestId: string | null;
+        traceId: string | null;
+      }>,
+      disconnectCount: 0,
+      onWorkerFrame: null as ((
+        sessionId: string,
+        payload: Uint8Array,
+        metadata: { requestId?: string; traceId?: string },
+      ) => void) | null,
+      lifecycleHandlers: null as {
+        onReconnecting?: (error?: Error) => void;
+        onReconnected?: (connectionId?: string) => void | Promise<void>;
+        onClose?: (error?: Error) => void;
+      } | null,
+    };
+
+    (window as typeof window & Record<string, unknown>)
+      .__cortexPlaywrightRelay = {
+      state,
+      emitWorkerText(
+        sessionId: string,
+        text: string,
+        metadata?: { requestId?: string; traceId?: string },
+      ) {
+        state.onWorkerFrame?.(
+          sessionId,
+          new TextEncoder().encode(text),
+          metadata ?? {},
+        );
+      },
+      triggerReconnecting(message?: string) {
+        state.lifecycleHandlers?.onReconnecting?.(
+          message ? new Error(message) : undefined,
+        );
+      },
+      async triggerReconnected(connectionId = "playwright-reconnected") {
+        state.connected = true;
+        await state.lifecycleHandlers?.onReconnected?.(connectionId);
+      },
+      triggerClose(message?: string) {
+        state.connected = false;
+        state.lifecycleHandlers?.onClose?.(
+          message ? new Error(message) : undefined,
+        );
+      },
+    };
+
+    window.__cortexRelayClientFactoryOverride = ({
+      onWorkerFrame,
+      lifecycleHandlers,
+    }) => {
+      state.onWorkerFrame = onWorkerFrame;
+      state.lifecycleHandlers = lifecycleHandlers ?? null;
+
+      return {
+        async connect(sessionId: string, workerId: string) {
+          state.connected = true;
+          state.connectCalls.push({ sessionId, workerId });
+        },
+        async sendMobileFrame(
+          sessionId: string,
+          payload: Uint8Array,
+          metadata?: { requestId?: string; traceId?: string },
+        ) {
+          state.sentFrames.push({
+            sessionId,
+            text: decoder.decode(payload),
+            requestId: metadata?.requestId ?? null,
+            traceId: metadata?.traceId ?? null,
+          });
+        },
+        async disconnect() {
+          state.connected = false;
+          state.disconnectCount += 1;
+        },
+        isConnected() {
+          return state.connected;
+        },
+      };
+    };
+  });
+}
+
+async function waitForRelayConnects(page: Page, count: number) {
+  await page.waitForFunction(
+    (expectedCount) =>
+      ((globalThis as Record<string, unknown>).__cortexPlaywrightRelay as {
+        state?: { connectCalls?: unknown[] };
+      } | undefined)?.state?.connectCalls?.length >= expectedCount,
+    count,
+  );
+}
+
+async function waitForRelayFrames(page: Page, count: number) {
+  await page.waitForFunction(
+    (expectedCount) =>
+      ((globalThis as Record<string, unknown>).__cortexPlaywrightRelay as {
+        state?: { sentFrames?: unknown[] };
+      } | undefined)?.state?.sentFrames?.length >= expectedCount,
+    count,
+  );
+}
+
+async function readRelayState(page: Page): Promise<RelayStateSnapshot> {
+  return page.evaluate(() => {
+    const relay = (globalThis as Record<string, unknown>)
+      .__cortexPlaywrightRelay as {
+      state: RelayStateSnapshot;
+    };
+
+    return {
+      connected: relay.state.connected,
+      connectCalls: [...relay.state.connectCalls],
+      sentFrames: [...relay.state.sentFrames],
+      disconnectCount: relay.state.disconnectCount,
+    };
+  });
+}
+
+async function emitWorkerText(page: Page, sessionId: string, text: string) {
+  await page.evaluate(
+    ([targetSessionId, workerText]) => {
+      (
+        (globalThis as Record<string, unknown>).__cortexPlaywrightRelay as {
+          emitWorkerText: (
+            sessionId: string,
+            text: string,
+            metadata?: { requestId?: string; traceId?: string },
+          ) => void;
+        }
+      ).emitWorkerText(targetSessionId, workerText);
+    },
+    [sessionId, text] as const,
+  );
+}
+
+async function triggerRelayReconnecting(page: Page, message: string) {
+  await page.evaluate((errorMessage) => {
+    (
+      (globalThis as Record<string, unknown>).__cortexPlaywrightRelay as {
+        triggerReconnecting: (message?: string) => void;
+      }
+    ).triggerReconnecting(errorMessage);
+  }, message);
+}
+
+async function triggerRelayReconnected(page: Page) {
+  await page.evaluate(async () => {
+    await (
+      (globalThis as Record<string, unknown>).__cortexPlaywrightRelay as {
+        triggerReconnected: (connectionId?: string) => Promise<void>;
+      }
+    ).triggerReconnected("relay-reconnected-from-playwright");
+  });
+}
+
 async function mockAuthenticatedShell(
   page: import("@playwright/test").Page,
   overrides: MockShellOverrides = {},
@@ -100,6 +281,33 @@ async function mockAuthenticatedShell(
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(state.workers),
+    });
+  });
+
+  await page.route("**/api/workers/*/directories**", async (route) => {
+    const workerId = route.request().url().match(/\/api\/workers\/([^/]+)\/directories/)?.[1];
+    const worker = state.workers.find(
+      (candidate) => candidate.workerId === decodeURIComponent(workerId ?? ""),
+    );
+    const requestedPath = new URL(route.request().url()).searchParams.get("path");
+
+    const entries = requestedPath
+      ? []
+      : (worker?.availablePaths ?? []).map((path) => ({
+          path,
+          name: path.split("/").filter(Boolean).at(-1) ?? path,
+          hasChildren: true,
+          isRoot: true,
+        }));
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        workerId: worker?.workerId ?? "worker-ui-test",
+        requestedPath,
+        entries,
+      }),
     });
   });
 
@@ -225,7 +433,7 @@ test("authenticated user can navigate app shell routes", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
 
-  await page.getByRole("button", { name: "查看审计记录" }).click();
+  await page.getByRole("button", { name: "查看审计" }).click();
   await expect(page).toHaveURL(/\/audit$/);
   await expect(page.getByRole("heading", { name: "审计" })).toBeVisible();
 });
@@ -252,6 +460,7 @@ test("audit page can filter worker records", async ({ page }) => {
 test("new session flow creates a session and enters terminal shell", async ({
   page,
 }) => {
+  await installMockRelay(page);
   await mockAuthenticatedShell(page);
   await page.goto("/");
   await page.getByRole("button", { name: "新建会话" }).click();
@@ -261,11 +470,17 @@ test("new session flow creates a session and enters terminal shell", async ({
   await expect(page.getByRole("combobox", { name: "执行节点" })).toContainText(
     "Worker UI Test",
   );
-  await expect(page.getByRole("combobox", { name: "工作目录" })).toContainText(
-    "/workspace/CortexTerminal",
-  );
-
-  await page.getByRole("textbox").fill("Playwright Created Session");
+  await expect(page.getByRole("button", { name: /真实目录/ })).toBeVisible();
+  await page.getByRole("button", { name: /真实目录/ }).click();
+  await expect(
+    page.getByRole("dialog", { name: "选择工作目录" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: /选择目录 \/workspace\/CortexTerminal/ })
+    .click();
+  await expect(
+    page.locator("div.mt-2.break-all.font-mono.text-\\[12px\\].text-cyan-300"),
+  ).toContainText("/workspace/CortexTerminal");
   const createSessionButton = page.getByRole("button", {
     name: "创建并进入终端",
   });
@@ -284,6 +499,23 @@ test("new session flow creates a session and enters terminal shell", async ({
   await expect(page).toHaveURL(/\/sessions\/session-created-from-playwright$/, {
     timeout: 10000,
   });
+
+  await waitForRelayConnects(page, 1);
+  await waitForRelayFrames(page, 1);
+
+  const relayState = await readRelayState(page);
+  expect(relayState.connectCalls).toContainEqual({
+    sessionId: "session-created-from-playwright",
+    workerId: "worker-ui-test",
+  });
+  expect(relayState.sentFrames[0]?.text).toBe("__ct_init__");
+
+  await emitWorkerText(
+    page,
+    "session-created-from-playwright",
+    "__ct_ready__:/workspace/CortexTerminal\n",
+  );
+  await expect(page.getByTestId("status")).toHaveText("在线");
 });
 
 test("worker install page issues install command", async ({ page }) => {
@@ -295,8 +527,6 @@ test("worker install page issues install command", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "安装 Worker" }),
   ).toBeVisible();
-
-  await page.getByRole("button", { name: "生成安装命令" }).click();
 
   await expect(
     page.getByText(/install-worker\.sh\?token=iwk_PLAYWR1/),
@@ -323,4 +553,88 @@ test("missing session route redirects home with clear error", async ({
   await expect(
     page.getByText("目标会话不存在、已被删除，或当前用户无权访问该会话。"),
   ).toBeVisible();
+});
+
+test("terminal session relays command input through worker session", async ({
+  page,
+}) => {
+  await installMockRelay(page);
+  await mockAuthenticatedShell(page);
+  await page.goto("/sessions/session-playwright-1");
+
+  await waitForRelayConnects(page, 1);
+  await waitForRelayFrames(page, 1);
+  await emitWorkerText(
+    page,
+    "session-playwright-1",
+    "__ct_ready__:/workspace/CortexTerminal\n",
+  );
+
+  await expect(page.getByTestId("status")).toHaveText("在线");
+
+  await emitWorkerText(
+    page,
+    "session-playwright-1",
+    "__ct_cwd__:/workspace/CortexTerminal/games/snake\n",
+  );
+  await expect(page.getByText("/workspace/CortexTerminal/games/snake")).toBeVisible();
+
+  await page.getByTestId("command-input").fill("请在当前目录实现一个贪食蛇游戏");
+  await page.getByTestId("send").click();
+
+  await waitForRelayFrames(page, 2);
+
+  const relayState = await readRelayState(page);
+  expect(relayState.sentFrames[0]?.text).toBe("__ct_init__");
+  expect(relayState.sentFrames[1]?.text).toBe(
+    "请在当前目录实现一个贪食蛇游戏",
+  );
+  expect(relayState.sentFrames[1]?.sessionId).toBe("session-playwright-1");
+});
+
+test("terminal session reconnects and reinitializes after relay recovery", async ({
+  page,
+}) => {
+  await installMockRelay(page);
+  await mockAuthenticatedShell(page);
+  await page.goto("/sessions/session-playwright-1");
+
+  await waitForRelayConnects(page, 1);
+  await waitForRelayFrames(page, 1);
+  await emitWorkerText(
+    page,
+    "session-playwright-1",
+    "__ct_ready__:/workspace/CortexTerminal\n",
+  );
+
+  await expect(page.getByTestId("status")).toHaveText("在线");
+
+  await triggerRelayReconnecting(page, "simulated relay drop");
+  await expect(page.getByTestId("status")).toHaveText("重连中");
+
+  await triggerRelayReconnected(page);
+  await waitForRelayConnects(page, 2);
+  await waitForRelayFrames(page, 2);
+
+  const reconnectState = await readRelayState(page);
+  expect(reconnectState.connectCalls).toEqual([
+    {
+      sessionId: "session-playwright-1",
+      workerId: "worker-ui-test",
+    },
+    {
+      sessionId: "session-playwright-1",
+      workerId: "worker-ui-test",
+    },
+  ]);
+  expect(
+    reconnectState.sentFrames.filter((frame) => frame.text === "__ct_init__"),
+  ).toHaveLength(2);
+
+  await emitWorkerText(
+    page,
+    "session-playwright-1",
+    "__ct_ready__:/workspace/CortexTerminal\n",
+  );
+  await expect(page.getByTestId("status")).toHaveText("在线");
 });

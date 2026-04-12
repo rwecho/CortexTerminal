@@ -40,7 +40,7 @@ public sealed class WorkerSessionCoordinator(
             }
 
             var sessionSnapshot = await gatewayManagementClient.GetSessionAsync(sessionId, cancellationToken);
-            var workingDirectory = ResolveWorkingDirectory(sessionSnapshot?.WorkingDirectory, availablePaths, workerId);
+            var workingDirectory = WorkerWorkingDirectoryResolver.Resolve(sessionSnapshot?.WorkingDirectory, availablePaths, workerId);
             sessionRuntimeCommand = WorkerRuntimeCatalog.ResolveRuntimeCommandForSession(sessionSnapshot?.AgentFamily, workerRuntimeCommand);
             var runtimeAdapter = WorkerRuntimeAdapterRegistry.Resolve(sessionSnapshot?.AgentFamily, sessionRuntimeCommand);
             var launchPlan = runtimeAdapter.BuildFreshPlan(
@@ -55,11 +55,17 @@ public sealed class WorkerSessionCoordinator(
                 string.IsNullOrWhiteSpace(sessionSnapshot?.DisplayName) ? sessionId : sessionSnapshot.DisplayName.Trim(),
                 workingDirectory,
                 sessionRuntimeCommand,
+                runtimeAdapter,
                 ptyConnection,
                 new StreamReader(ptyConnection.ReaderStream, Encoding.UTF8, false, 1024, leaveOpen: true),
                 ptyConnection.WriterStream,
                 new StreamWriter(ptyConnection.WriterStream, new UTF8Encoding(false)) { AutoFlush = true },
                 new SemaphoreSlim(1, 1));
+
+            if (!runtimeAdapter.RequiresPromptReadiness)
+            {
+                session.TryMarkRuntimeReady();
+            }
 
             sessions[sessionId] = session;
 
@@ -67,6 +73,44 @@ public sealed class WorkerSessionCoordinator(
             {
                 await PumpSessionOutputAsync(sessionId, session, cancellationToken);
             }, cancellationToken);
+
+            if (runtimeAdapter.RequiresPromptReadiness && runtimeAdapter.PromptReadyFallbackDelay > TimeSpan.Zero)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(runtimeAdapter.PromptReadyFallbackDelay, cancellationToken);
+                        if (!sessions.TryGetValue(sessionId, out var currentSession)
+                            || !ReferenceEquals(currentSession, session)
+                            || !session.TryMarkRuntimeReadyByFallback())
+                        {
+                            return;
+                        }
+
+                        logger.LogInformation(
+                            "[worker:runtime-prompt-ready] SessionId={SessionId}, Runtime={Runtime}, AgentFamily={AgentFamily}, Source=fallback-timer",
+                            sessionId,
+                            session.RuntimeCommand,
+                            session.RuntimeAdapter.AgentFamily);
+                        var (pendingRequestId, pendingTraceId) = session.GetPendingReady();
+                        await RelayTextFrameAsync(
+                            sessionId,
+                            $"__ct_ready__:{session.WorkingDirectory}\r\n",
+                            pendingRequestId,
+                            pendingTraceId,
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // ignore shutdown
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogDebug(ex, "[worker:runtime-prompt-ready-fallback-failed] SessionId={SessionId}", sessionId);
+                    }
+                }, cancellationToken);
+            }
 
             logger.LogInformation(
                 "[worker:agent-session-ready] SessionId={SessionId}, Runtime={Runtime}, ModelName={ModelName}, WorkingDirectory={WorkingDirectory}, AgentFamily={AgentFamily}, Shell={Shell}, Entrypoint={Entrypoint}",
@@ -77,12 +121,6 @@ public sealed class WorkerSessionCoordinator(
                 sessionSnapshot?.AgentFamily,
                 launchPlan.ShellApp,
                 launchPlan.EntrypointPath);
-            await RelayTextFrameAsync(
-                sessionId,
-                $"__ct_ready__:{workingDirectory}\r\n",
-                requestId,
-                traceId,
-                cancellationToken);
             return session;
         }
         catch (Exception ex)
@@ -98,6 +136,11 @@ public sealed class WorkerSessionCoordinator(
 
     public async Task SendInputAsync(WorkerAgentSession session, string input, CancellationToken cancellationToken)
     {
+        if (session.RuntimeAdapter.RequiresPromptReadiness && !session.IsRuntimeReady)
+        {
+            throw new InvalidOperationException($"Runtime '{session.RuntimeAdapter.AgentFamily}' is not ready to accept input yet.");
+        }
+
         await session.CommandLock.WaitAsync(cancellationToken);
         try
         {
@@ -129,6 +172,26 @@ public sealed class WorkerSessionCoordinator(
         if (!string.IsNullOrWhiteSpace(traceId))
         {
             session.LastTraceId = traceId;
+        }
+    }
+
+    public async Task ResizeTerminalAsync(
+        WorkerAgentSession session,
+        int cols,
+        int rows,
+        CancellationToken cancellationToken)
+    {
+        var safeCols = Math.Max(40, cols);
+        var safeRows = Math.Max(12, rows);
+
+        await session.CommandLock.WaitAsync(cancellationToken);
+        try
+        {
+            session.Connection.Resize(safeCols, safeRows);
+        }
+        finally
+        {
+            session.CommandLock.Release();
         }
     }
 
@@ -213,31 +276,6 @@ public sealed class WorkerSessionCoordinator(
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             }
         }
-    }
-
-    private static string ResolveWorkingDirectory(string? requestedWorkingDirectory, IReadOnlyList<string> availablePaths, string workerId)
-    {
-        var fallbackPath = availablePaths.Count > 0
-            ? availablePaths[0]
-            : Path.GetFullPath(Environment.CurrentDirectory);
-
-        if (string.IsNullOrWhiteSpace(requestedWorkingDirectory))
-        {
-            return fallbackPath;
-        }
-
-        var normalizedRequestedPath = Path.GetFullPath(requestedWorkingDirectory);
-        if (availablePaths.Count > 0 && !availablePaths.Contains(normalizedRequestedPath, StringComparer.Ordinal))
-        {
-            throw new InvalidOperationException($"Working directory '{normalizedRequestedPath}' is not allowed on worker '{workerId}'.");
-        }
-
-        if (!Directory.Exists(normalizedRequestedPath))
-        {
-            throw new DirectoryNotFoundException($"Working directory '{normalizedRequestedPath}' does not exist.");
-        }
-
-        return normalizedRequestedPath;
     }
 
     private async Task SweepSessionsAsync(
@@ -340,6 +378,22 @@ public sealed class WorkerSessionCoordinator(
                 var chunk = new string(buffer, 0, read);
                 if (!string.IsNullOrEmpty(chunk))
                 {
+                    if (session.ObserveStartupOutput(chunk))
+                    {
+                        logger.LogInformation(
+                            "[worker:runtime-prompt-ready] SessionId={SessionId}, Runtime={Runtime}, AgentFamily={AgentFamily}",
+                            sessionId,
+                            session.RuntimeCommand,
+                            session.RuntimeAdapter.AgentFamily);
+                        var (requestId, traceId) = session.GetPendingReady();
+                        await RelayTextFrameAsync(
+                            sessionId,
+                            $"__ct_ready__:{session.WorkingDirectory}\r\n",
+                            requestId,
+                            traceId,
+                            cancellationToken);
+                    }
+
                     await RelayTextFrameAsync(sessionId, chunk, null, session.LastTraceId, cancellationToken);
                 }
             }

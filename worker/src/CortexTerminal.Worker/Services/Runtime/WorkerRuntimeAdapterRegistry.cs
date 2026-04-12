@@ -8,6 +8,7 @@ public static class WorkerRuntimeAdapterRegistry
         new Dictionary<string, IWorkerRuntimeAdapter>(StringComparer.Ordinal)
         {
             ["claude"] = new ClaudeWorkerRuntimeAdapter(),
+            ["copilot"] = new CopilotWorkerRuntimeAdapter(),
             ["codex"] = new CodexWorkerRuntimeAdapter(),
             ["gemini"] = new GeminiWorkerRuntimeAdapter(),
             ["opencode"] = new OpenCodeWorkerRuntimeAdapter(),

@@ -13,10 +13,10 @@ type SessionsStore = {
   managementError: string | null;
   isDeletingSessionId: string | null;
   isDeletingWorkerId: string | null;
+  isQuickStartingWorkerId: string | null;
   newSessionAgentFamily: AgentFamily;
   newSessionWorkerId: string;
   newSessionPath: string;
-  newSessionDisplayName: string;
   isCreatingSession: boolean;
   setWorkers: (workers: GatewayWorker[]) => void;
   setSessions: (sessions: GatewaySession[]) => void;
@@ -31,10 +31,10 @@ type SessionsStore = {
   setManagementError: (managementError: string | null) => void;
   setIsDeletingSessionId: (isDeletingSessionId: string | null) => void;
   setIsDeletingWorkerId: (isDeletingWorkerId: string | null) => void;
+  setIsQuickStartingWorkerId: (isQuickStartingWorkerId: string | null) => void;
   setNewSessionAgentFamily: (newSessionAgentFamily: AgentFamily) => void;
   setNewSessionWorkerId: (newSessionWorkerId: string) => void;
   setNewSessionPath: (newSessionPath: string) => void;
-  setNewSessionDisplayName: (newSessionDisplayName: string) => void;
   setIsCreatingSession: (isCreatingSession: boolean) => void;
   resetSessionsState: () => void;
 };
@@ -47,10 +47,10 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
   managementError: null,
   isDeletingSessionId: null,
   isDeletingWorkerId: null,
+  isQuickStartingWorkerId: null,
   newSessionAgentFamily: "claude",
   newSessionWorkerId: "",
   newSessionPath: "",
-  newSessionDisplayName: "",
   isCreatingSession: false,
   setWorkers: (workers) => set({ workers }),
   setSessions: (sessions) => set({ sessions }),
@@ -66,12 +66,12 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
   setManagementError: (managementError) => set({ managementError }),
   setIsDeletingSessionId: (isDeletingSessionId) => set({ isDeletingSessionId }),
   setIsDeletingWorkerId: (isDeletingWorkerId) => set({ isDeletingWorkerId }),
+  setIsQuickStartingWorkerId: (isQuickStartingWorkerId) =>
+    set({ isQuickStartingWorkerId }),
   setNewSessionAgentFamily: (newSessionAgentFamily) =>
     set({ newSessionAgentFamily }),
   setNewSessionWorkerId: (newSessionWorkerId) => set({ newSessionWorkerId }),
   setNewSessionPath: (newSessionPath) => set({ newSessionPath }),
-  setNewSessionDisplayName: (newSessionDisplayName) =>
-    set({ newSessionDisplayName }),
   setIsCreatingSession: (isCreatingSession) => set({ isCreatingSession }),
   resetSessionsState: () =>
     set({
@@ -82,10 +82,10 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       managementError: null,
       isDeletingSessionId: null,
       isDeletingWorkerId: null,
+      isQuickStartingWorkerId: null,
       newSessionAgentFamily: "claude",
       newSessionWorkerId: "",
       newSessionPath: "",
-      newSessionDisplayName: "",
       isCreatingSession: false,
     }),
 }));

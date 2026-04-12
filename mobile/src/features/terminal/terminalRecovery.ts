@@ -55,20 +55,6 @@ export function deriveTerminalRecoverySnapshot({
     };
   }
 
-  if (activeWorker && !activeWorker.isOnline) {
-    return {
-      phase: "worker-offline",
-      title: "Worker 当前离线",
-      description:
-        `节点 ${activeWorker.displayName} 当前不在线，terminal 无法继续附着。` +
-        (activeWorker.lastHeartbeatAtUtc
-          ? ` 最后心跳：${new Date(activeWorker.lastHeartbeatAtUtc).toLocaleString()}`
-          : ""),
-      tone: "danger",
-      showRetry: false,
-    };
-  }
-
   if (connectionState === "reconnecting") {
     return {
       phase: "reconnecting",
@@ -104,6 +90,20 @@ export function deriveTerminalRecoverySnapshot({
         "当前 session 在 gateway 侧处于 Disconnected。你可以手动重试附着；如果 worker 端 PTY 已被清理，下一步将需要 resume/fresh 决策。",
       tone: "warning",
       showRetry: true,
+    };
+  }
+
+  if (activeWorker && !activeWorker.isOnline && connectionState === "idle") {
+    return {
+      phase: "worker-offline",
+      title: "Worker 当前离线",
+      description:
+        `节点 ${activeWorker.displayName} 当前不在线，terminal 无法继续附着。` +
+        (activeWorker.lastHeartbeatAtUtc
+          ? ` 最后心跳：${new Date(activeWorker.lastHeartbeatAtUtc).toLocaleString()}`
+          : ""),
+      tone: "danger",
+      showRetry: false,
     };
   }
 

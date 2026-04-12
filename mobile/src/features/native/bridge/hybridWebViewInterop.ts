@@ -11,6 +11,8 @@ declare global {
     chrome?: any;
     webkit?: any;
     hybridWebViewHost?: { sendMessage: (msg: any) => void };
+    __dispatchCortexNativeManagementMessage?: (message: any) => void;
+    __cortexHandleNativeBack?: () => boolean;
   }
 }
 
@@ -66,6 +68,15 @@ declare global {
       });
       window.dispatchEvent(event);
     }
+
+    window.__dispatchCortexNativeManagementMessage = (message: any) => {
+      const event = new CustomEvent("CortexNativeManagementMessageReceived", {
+        detail: { message },
+      });
+
+      window.dispatchEvent(event);
+    };
+
     // Determine the mechanism to receive messages from the host application.
     if (
       window.chrome &&

@@ -18,5 +18,7 @@ public interface IWorkerManagementService
 
     Task MarkDisconnectedByConnectionAsync(string connectionId, CancellationToken cancellationToken);
 
+    Task UnregisterAsync(string workerId, CancellationToken cancellationToken);
+
     Task RecordHeartbeatAsync(string workerId, CancellationToken cancellationToken);
 }

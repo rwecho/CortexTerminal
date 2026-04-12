@@ -73,6 +73,7 @@ public sealed class SessionManagementService(
             var worker = await dbContext.Workers.FirstAsync(candidate => candidate.WorkerId == normalizedWorkerId, cancellationToken);
             var normalizedAgentFamily = WorkerAgentFamilySupport.NormalizeAgentFamily(request.AgentFamily)
                 ?? WorkerAgentFamilySupport.GetDefaultAgentFamily(worker.ModelName);
+            EnsureWorkerSupportsAgentFamily(worker, normalizedAgentFamily);
 
             request = request with { AgentFamily = normalizedAgentFamily };
         }
@@ -152,7 +153,13 @@ public sealed class SessionManagementService(
             throw new InvalidOperationException($"Worker '{normalizedWorkerId}' 当前离线，无法重新绑定会话。\nWorker '{normalizedWorkerId}' is offline and cannot be bound.");
         }
 
+        var worker = await dbContext.Workers.FirstAsync(candidate => candidate.WorkerId == normalizedWorkerId, cancellationToken);
+        var normalizedAgentFamily = WorkerAgentFamilySupport.NormalizeAgentFamily(session.AgentFamily)
+            ?? WorkerAgentFamilySupport.GetDefaultAgentFamily(worker.ModelName);
+        EnsureWorkerSupportsAgentFamily(worker, normalizedAgentFamily);
+
         session.WorkerId = normalizedWorkerId;
+        session.AgentFamily = normalizedAgentFamily;
         session.TraceId = string.IsNullOrWhiteSpace(request.TraceId) ? session.TraceId : request.TraceId.Trim();
         session.UpdatedAtUtc = DateTime.UtcNow;
         if (session.State == SessionLifecycleState.Closed)
@@ -329,5 +336,20 @@ public sealed class SessionManagementService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void EnsureWorkerSupportsAgentFamily(WorkerNodeRecord worker, string agentFamily)
+    {
+        var supportedAgentFamilies = WorkerAgentFamilySupport.DeserializeSupportedAgentFamilies(
+            worker.SupportedAgentFamiliesJson,
+            worker.ModelName);
+
+        if (supportedAgentFamilies.Contains(agentFamily, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Worker '{worker.WorkerId}' 不支持 runtime '{agentFamily}'。当前节点支持：{string.Join(", ", supportedAgentFamilies)}。");
     }
 }

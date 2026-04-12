@@ -6,6 +6,7 @@ public sealed class WorkerRuntimeAdapterRegistryTests
 {
     [Theory]
     [InlineData("claude", "claude", "claude")]
+    [InlineData("copilot", "copilot", "copilot")]
     [InlineData("codex", "codex", "codex")]
     [InlineData("opencode", "opencode", "opencode")]
     [InlineData(null, "claude", "claude")]
@@ -69,5 +70,27 @@ public sealed class WorkerRuntimeAdapterRegistryTests
             "gemini",
             "/workspace/sample",
             ResumeSessionId: "session-gemini-1")));
+    }
+
+    [Theory]
+    [InlineData("codex", "OpenAI Codex\nmodel: gpt-5.4\n›", true)]
+    [InlineData("codex", "Do you trust the contents of this directory?", false)]
+    [InlineData("opencode", "Ask anything... /status", true)]
+    [InlineData("copilot", "GitHub Copilot v1.0.24\nDescribe a task to get started.\nType @ to mention files", true)]
+    [InlineData("copilot", "Loading environment", false)]
+    public void Adapters_DetectPromptReadiness(string agentFamily, string transcript, bool expectedReady)
+    {
+        var adapter = WorkerRuntimeAdapterRegistry.Resolve(agentFamily, agentFamily);
+
+        Assert.Equal(expectedReady, adapter.IsPromptReady(transcript));
+    }
+
+    [Fact]
+    public void CodexAdapter_BlocksFallbackWhileTrustPromptIsVisible()
+    {
+        var adapter = WorkerRuntimeAdapterRegistry.Resolve("codex", "codex");
+
+        Assert.True(adapter.IsPromptBlocked("Do you trust the contents of this directory?"));
+        Assert.Equal(TimeSpan.FromSeconds(5), adapter.PromptReadyFallbackDelay);
     }
 }

@@ -4,6 +4,7 @@ import { useAuthStore } from "../../auth/store/useAuthStore";
 import { useSessionsStore } from "../store/useSessionsStore";
 import { useTerminalStore } from "../../terminal/store/useTerminalStore";
 import { useSessionActions } from "../hooks/useSessionActions";
+import { useQuickStartWorkerSession } from "../hooks/useQuickStartWorkerSession";
 import { buildAppPath } from "../../app/routeUtils";
 
 export function HomeRoute() {
@@ -21,9 +22,13 @@ export function HomeRoute() {
   const isDeletingWorkerId = useSessionsStore(
     (state) => state.isDeletingWorkerId,
   );
+  const isQuickStartingWorkerId = useSessionsStore(
+    (state) => state.isQuickStartingWorkerId,
+  );
   const activeSessionId = useTerminalStore((state) => state.activeSessionId);
   const { openSession, handleDeleteSession, handleDeleteWorker } =
     useSessionActions();
+  const quickStartWorkerSession = useQuickStartWorkerSession();
 
   return (
     <HomePage
@@ -35,10 +40,12 @@ export function HomeRoute() {
       activeSessionId={activeSessionId}
       isDeletingSessionId={isDeletingSessionId}
       isDeletingWorkerId={isDeletingWorkerId}
+      isQuickStartingWorkerId={isQuickStartingWorkerId}
       onOpenNewSession={() => navigate(buildAppPath("newSession"))}
       onOpenSession={openSession}
       onDeleteSession={handleDeleteSession}
       onDeleteWorker={handleDeleteWorker}
+      onQuickStartWorker={quickStartWorkerSession}
     />
   );
 }

@@ -6,6 +6,7 @@ import type { PendingAttachment } from "../terminalAttachmentTypes";
 import type { TerminalConnectionState } from "../terminalRecovery";
 
 type InputMode = "text" | "voice";
+const maxTerminalLogEntries = 500;
 
 type TerminalStore = {
   activeSessionId: string | null;
@@ -76,7 +77,11 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   setConnectionState: (connectionState) => set({ connectionState }),
   setTerminalLogs: (terminalLogs) => set({ terminalLogs }),
   appendTerminalLogs: (logs) =>
-    set((state) => ({ terminalLogs: [...state.terminalLogs, ...logs] })),
+    set((state) => ({
+      terminalLogs: [...state.terminalLogs, ...logs].slice(
+        -maxTerminalLogEntries,
+      ),
+    })),
   addPendingAttachments: (attachments) =>
     set((state) => ({
       pendingAttachments: [...state.pendingAttachments, ...attachments],

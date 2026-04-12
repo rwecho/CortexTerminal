@@ -8,7 +8,7 @@ using AndroidColor = Android.Graphics.Color;
 
 namespace CortexTerminal.MobileShell;
 
-[Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true, LaunchMode = LaunchMode.SingleTop, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
+[Activity(Theme = "@style/CortexTerminal.SplashTheme", MainLauncher = true, LaunchMode = LaunchMode.SingleTop, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public class MainActivity : MauiAppCompatActivity
 {
     private static readonly AndroidColor ShellBackgroundColor = AndroidColor.ParseColor("#050505");
@@ -35,6 +35,17 @@ public class MainActivity : MauiAppCompatActivity
         Window.SetStatusBarColor(ShellBackgroundColor);
         Window.SetNavigationBarColor(ShellBackgroundColor);
         Window.DecorView.SetBackgroundColor(ShellBackgroundColor);
+
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.P)
+        {
+            Window.NavigationBarDividerColor = ShellBackgroundColor;
+        }
+
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.Q)
+        {
+            Window.NavigationBarContrastEnforced = false;
+            Window.StatusBarContrastEnforced = false;
+        }
 
         var controller = WindowCompat.GetInsetsController(Window, Window.DecorView);
         if (controller is null)

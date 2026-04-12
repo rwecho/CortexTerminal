@@ -26,6 +26,11 @@ export const agentOptions: AgentOption[] = [
     label: "OpenCode",
     description: "适合轻量终端协作与多节点代码处理流程。",
   },
+  {
+    id: "copilot",
+    label: "Copilot",
+    description: "适合 GitHub Copilot CLI 的交互式 coding / terminal 协作流程。",
+  },
 ];
 
 export const allAgentFamilies = agentOptions.map(
@@ -51,14 +56,78 @@ export function getPathLabel(path: string): string {
   return segments.at(-1) ?? path;
 }
 
+export function isPathWithinRoots(path: string, roots: string[]): boolean {
+  return roots.some((root) => {
+    if (!root) {
+      return false;
+    }
+
+    if (path === root) {
+      return true;
+    }
+
+    const separator = root.includes("\\") ? "\\" : "/";
+    const rootPrefix = root.endsWith(separator) ? root : `${root}${separator}`;
+    return path.startsWith(rootPrefix);
+  });
+}
+
 export function isAuthFailure(message: string): boolean {
   return /(^|\b)(401|403)\b|unauthorized|forbidden|status code '?40[13]/i.test(
     message,
   );
 }
 
+export function toUserFacingManagementError(message: string): string {
+  const normalizedMessage = message.trim();
+  const lowerMessage = normalizedMessage.toLowerCase();
+
+  if (
+    lowerMessage.includes("reconnect retries have been exhausted") ||
+    lowerMessage.includes("stopped during negotiation")
+  ) {
+    return "节点连接已中断，正在等待重新建立连接。";
+  }
+
+  if (
+    lowerMessage.includes("relayfrommobile") &&
+    lowerMessage.includes("not connected")
+  ) {
+    return "执行节点当前未连接，暂时无法打开这个会话。";
+  }
+
+  if (lowerMessage.includes("not connected")) {
+    return "连接尚未就绪，请稍后重试。";
+  }
+
+  if (lowerMessage.includes("offline")) {
+    return "节点当前离线，请等待它重新上线。";
+  }
+
+  if (lowerMessage.includes("not allowed")) {
+    return "当前目录不允许在这个节点上执行，请重新选择目录或节点。";
+  }
+
+  if (
+    lowerMessage.includes("management") &&
+    (lowerMessage.includes("closed") || lowerMessage.includes("disconnected"))
+  ) {
+    return "节点列表连接已断开，正在等待恢复。";
+  }
+
+  if (normalizedMessage.length > 120) {
+    return "连接出现异常，请重试。";
+  }
+
+  return normalizedMessage;
+}
+
 export function inferAgentFamily(modelName?: string | null): AgentFamily {
   const normalized = modelName?.trim().toLowerCase() ?? "";
+
+  if (normalized.includes("copilot")) {
+    return "copilot";
+  }
 
   if (normalized.includes("codex")) {
     return "codex";
@@ -75,6 +144,19 @@ export function inferAgentFamily(modelName?: string | null): AgentFamily {
   return "claude";
 }
 
+export function doesWorkerSupportAgentFamily(
+  worker: GatewayWorker | null | undefined,
+  agentFamily: AgentFamily,
+): boolean {
+  return getWorkerSupportedAgentFamilies(worker).includes(agentFamily);
+}
+
+export function getPreferredWorkerAgentFamily(
+  worker: GatewayWorker | null | undefined,
+): AgentFamily {
+  return getWorkerSupportedAgentFamilies(worker)[0] ?? inferAgentFamily(worker?.modelName);
+}
+
 export function getAgentLabel(agent: AgentFamily): string {
   return agentOptions.find((option) => option.id === agent)?.label ?? agent;
 }
@@ -89,17 +171,10 @@ export function getWorkerSupportedAgentFamilies(
     );
 
   if (!detectedAgentFamilies || detectedAgentFamilies.length === 0) {
-    return [...allAgentFamilies];
+    return [inferAgentFamily(worker?.modelName)];
   }
 
-  const uniqueDetectedAgentFamilies = Array.from(
-    new Set(detectedAgentFamilies),
-  );
-  const remainingAgentFamilies = allAgentFamilies.filter(
-    (family) => !uniqueDetectedAgentFamilies.includes(family),
-  );
-
-  return [...uniqueDetectedAgentFamilies, ...remainingAgentFamilies];
+  return Array.from(new Set(detectedAgentFamilies));
 }
 
 export function buildSessionBootLogs(

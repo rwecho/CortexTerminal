@@ -19,6 +19,7 @@ public sealed class RelayHub(
 {
     private const string ReceiveFromMobileMethod = "ReceiveFromMobile";
     private const string ReceiveFromWorkerMethod = "ReceiveFromWorker";
+    private const int AuditSummaryMaxLength = 300;
 
     public async Task RegisterWorker(string workerId)
     {
@@ -216,9 +217,7 @@ public sealed class RelayHub(
             new AuditWriteRequest(
                 "command",
                 "submitted",
-                auditedCommand.AttachmentFileNames.Count == 0
-                    ? $"会话 {sessionId} 提交命令：{auditedCommand.CommandText}"
-                    : $"会话 {sessionId} 提交带附件命令：{auditedCommand.CommandText}",
+                BuildCommandAuditSummary(sessionId, auditedCommand),
                 ActorType: "user",
                 ActorId: actorId,
                 SessionId: sessionId,
@@ -231,5 +230,25 @@ public sealed class RelayHub(
                     attachments = auditedCommand.AttachmentFileNames
                 }),
             Context.ConnectionAborted);
+    }
+
+    private static string BuildCommandAuditSummary(string sessionId, RelayAuditedCommand auditedCommand)
+    {
+        var prefix = auditedCommand.AttachmentFileNames.Count == 0
+            ? $"会话 {sessionId} 提交命令："
+            : $"会话 {sessionId} 提交带附件命令：";
+
+        var maxCommandLength = Math.Max(0, AuditSummaryMaxLength - prefix.Length);
+        if (auditedCommand.CommandText.Length <= maxCommandLength)
+        {
+            return prefix + auditedCommand.CommandText;
+        }
+
+        if (maxCommandLength <= 1)
+        {
+            return prefix[..Math.Min(prefix.Length, AuditSummaryMaxLength)];
+        }
+
+        return prefix + auditedCommand.CommandText[..(maxCommandLength - 1)] + "…";
     }
 }

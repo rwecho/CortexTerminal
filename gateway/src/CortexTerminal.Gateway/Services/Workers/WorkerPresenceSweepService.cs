@@ -6,7 +6,7 @@ public sealed class WorkerPresenceSweepService(
     IServiceProvider serviceProvider,
     ILogger<WorkerPresenceSweepService> logger) : BackgroundService
 {
-    private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

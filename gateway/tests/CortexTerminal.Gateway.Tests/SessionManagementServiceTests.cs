@@ -124,7 +124,7 @@ public sealed class SessionManagementServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_WithUndetectedAgentFamily_StillAllowsSessionCreation()
+    public async Task CreateAsync_WithUnsupportedAgentFamily_ThrowsClearError()
     {
         await using var dbContext = CreateDbContext();
         var presenceStore = new FakeWorkerPresenceStore();
@@ -145,18 +145,19 @@ public sealed class SessionManagementServiceTests
         await dbContext.SaveChangesAsync();
         await presenceStore.MarkWorkerOnlineAsync("worker-online", "conn-1", CancellationToken.None);
 
-        var session = await service.CreateAsync(
-            new CreateGatewaySessionRequest(
-                null,
-                null,
-                "worker-online",
-                "Codex Session",
-                "codex",
-                "/workspace/runtime",
-                null),
-            CancellationToken.None);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CreateAsync(
+                new CreateGatewaySessionRequest(
+                    null,
+                    null,
+                    "worker-online",
+                    "Codex Session",
+                    "codex",
+                    "/workspace/runtime",
+                    null),
+                CancellationToken.None));
 
-        Assert.Equal("codex", session.AgentFamily);
+        Assert.Contains("不支持 runtime 'codex'", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -196,6 +197,98 @@ public sealed class SessionManagementServiceTests
 
         var storedSession = await dbContext.Sessions.SingleAsync(candidate => candidate.SessionId == session.SessionId);
         Assert.Equal("codex", storedSession.AgentFamily);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithMissingSupportedFamilies_InferRuntimeFromModelName()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new SessionManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-copilot",
+            DisplayName = "Worker Copilot",
+            ModelName = "GitHub Copilot CLI",
+            SupportedAgentFamiliesJson = null,
+            State = WorkerLifecycleState.Online,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-3),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-3)
+        });
+        await dbContext.SaveChangesAsync();
+        await presenceStore.MarkWorkerOnlineAsync("worker-copilot", "conn-1", CancellationToken.None);
+
+        var session = await service.CreateAsync(
+            new CreateGatewaySessionRequest(
+                null,
+                null,
+                "worker-copilot",
+                "Copilot Session",
+                null,
+                "/workspace/runtime",
+                null),
+            CancellationToken.None);
+
+        Assert.Equal("copilot", session.AgentFamily);
+    }
+
+    [Fact]
+    public async Task ActivateBindingAsync_AfterMobileDisconnect_ReactivatesSessionAndPresence()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new SessionManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-recover",
+            DisplayName = "Worker Recover",
+            State = WorkerLifecycleState.Online,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-3),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-3)
+        });
+        dbContext.Sessions.Add(new GatewaySessionRecord
+        {
+            SessionId = "session-recover",
+            WorkerId = "worker-recover",
+            DisplayName = "Recover Session",
+            WorkingDirectory = "/workspace/recover",
+            MobileConnectionId = "mobile-conn-1",
+            State = SessionLifecycleState.Active,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-2),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-2),
+            LastActivityAtUtc = DateTime.UtcNow.AddMinutes(-2)
+        });
+        await dbContext.SaveChangesAsync();
+        await presenceStore.MarkSessionActiveAsync(
+            "session-recover",
+            "worker-recover",
+            "mobile-conn-1",
+            "trace-old",
+            CancellationToken.None);
+
+        await service.MarkDisconnectedByConnectionAsync("mobile-conn-1", CancellationToken.None);
+
+        var disconnected = await dbContext.Sessions.SingleAsync(candidate => candidate.SessionId == "session-recover");
+        Assert.Equal(SessionLifecycleState.Disconnected, disconnected.State);
+        Assert.Null(disconnected.MobileConnectionId);
+        Assert.Null(await presenceStore.GetSessionPresenceAsync("session-recover", CancellationToken.None));
+
+        await service.ActivateBindingAsync("session-recover", "worker-recover", "mobile-conn-2", CancellationToken.None);
+
+        var reactivated = await dbContext.Sessions.SingleAsync(candidate => candidate.SessionId == "session-recover");
+        Assert.Equal(SessionLifecycleState.Active, reactivated.State);
+        Assert.Equal("mobile-conn-2", reactivated.MobileConnectionId);
+
+        var presence = await presenceStore.GetSessionPresenceAsync("session-recover", CancellationToken.None);
+        Assert.NotNull(presence);
+        Assert.Equal("worker-recover", presence!.WorkerId);
+        Assert.Equal("mobile-conn-2", presence.MobileConnectionId);
     }
 
     private static GatewayDbContext CreateDbContext()

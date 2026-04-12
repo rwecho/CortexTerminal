@@ -28,8 +28,6 @@
 	</array>
 	<key>XSAppIconAssets</key>
 	<string>Assets.xcassets/appicon.appiconset</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Cortex Terminal 需要访问麦克风来录制语音附件。</string>
 	<key>CFBundleDisplayName</key>
 	<string>Cortex Terminal</string>
 	<key>CFBundleName</key>
@@ -44,6 +42,10 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
 			<key>cortterminal.tech</key>
@@ -55,19 +57,8 @@
 			</dict>
 		</dict>
 	</dict>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
-		<string>remote-notification</string>
-	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Cortex Terminal 使用 Face ID 进行快速安全登录。</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Cortex Terminal 需要访问相机来扫描二维码或拍摄附件。</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Cortex Terminal 需要访问相册来选择附件。</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIStatusBarStyle</key>

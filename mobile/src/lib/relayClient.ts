@@ -18,6 +18,13 @@ export type RelayLifecycleHandlers = {
   onClose?: (error?: Error) => void;
 };
 
+export type RelayClientOverrideFactory = (options: {
+  gatewayBaseUrl: string;
+  onWorkerFrame: WorkerFrameHandler;
+  accessTokenProvider?: AccessTokenProvider;
+  lifecycleHandlers?: RelayLifecycleHandlers;
+}) => RelayClient;
+
 export interface RelayClient {
   connect(sessionId: string, workerId: string): Promise<void>;
   sendMobileFrame(
@@ -27,6 +34,12 @@ export interface RelayClient {
   ): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
+}
+
+declare global {
+  interface Window {
+    __cortexRelayClientFactoryOverride?: RelayClientOverrideFactory;
+  }
 }
 
 function decodeBase64(input: string): Uint8Array {
@@ -57,12 +70,31 @@ function encodeBase64(payload: Uint8Array): string {
   return btoa(binary);
 }
 
+function getRelayClientOverrideFactory(): RelayClientOverrideFactory | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const factory = window.__cortexRelayClientFactoryOverride;
+  return typeof factory === "function" ? factory : null;
+}
+
 export function createRelayClient(
   gatewayBaseUrl: string,
   onWorkerFrame: WorkerFrameHandler,
   accessTokenProvider?: AccessTokenProvider,
   lifecycleHandlers?: RelayLifecycleHandlers,
 ): RelayClient {
+  const overrideFactory = getRelayClientOverrideFactory();
+  if (overrideFactory) {
+    return overrideFactory({
+      gatewayBaseUrl,
+      onWorkerFrame,
+      accessTokenProvider,
+      lifecycleHandlers,
+    });
+  }
+
   const hubUrl = `${gatewayBaseUrl.replace(/\/$/, "")}/hubs/relay`;
 
   const connection = new signalR.HubConnectionBuilder()

@@ -360,3 +360,28 @@ export async function shareNativeText({
   await copyNativeText(text);
   return false;
 }
+
+export async function configureNativeManagementRealtime(
+  gatewayUrl: string,
+  accessToken: string,
+): Promise<void> {
+  if (!hasNativeBridge()) {
+    throw new Error("HybridWebView native bridge is not available.");
+  }
+
+  await invokeNative<{ success: boolean }>(
+    "ConfigureManagementRealtimeAsync",
+    JSON.stringify({
+      gatewayUrl,
+      accessToken,
+    }),
+  );
+}
+
+export async function disconnectNativeManagementRealtime(): Promise<void> {
+  if (!hasNativeBridge()) {
+    return;
+  }
+
+  await invokeNative<{ success: boolean }>("DisconnectManagementRealtimeAsync");
+}

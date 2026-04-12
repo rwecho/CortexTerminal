@@ -42,6 +42,23 @@ public sealed class GatewayManagementClient(
         logger.LogDebug("[worker:heartbeat] WorkerId={WorkerId}", workerId);
     }
 
+    public async Task UnregisterWorkerAsync(string workerId, CancellationToken cancellationToken)
+    {
+        using var request = await CreateRequestAsync(
+            HttpMethod.Post,
+            $"api/workers/{Uri.EscapeDataString(workerId)}/unregister",
+            cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return;
+        }
+
+        response.EnsureSuccessStatusCode();
+        logger.LogInformation("[worker:management-unregister] WorkerId={WorkerId}", workerId);
+    }
+
     public async Task<GatewaySessionSnapshot?> GetSessionAsync(string sessionId, CancellationToken cancellationToken)
     {
         using var request = await CreateRequestAsync(

@@ -44,6 +44,22 @@ public static class GatewayEndpointRouteBuilderExtensions
             var worker = await workerManagementService.GetAsync(workerId, cancellationToken);
             return worker is null ? Results.NotFound() : Results.Ok(worker);
         }).RequireAuthorization("GatewayUser");
+        workers.MapGet("/{workerId}/directories", async (string workerId, string? path, IWorkerDirectoryBrowserService workerDirectoryBrowserService, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var listing = await workerDirectoryBrowserService.BrowseAsync(workerId, path, cancellationToken);
+                return listing is null ? Results.NotFound() : Results.Ok(listing);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (DirectoryNotFoundException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+        }).RequireAuthorization("GatewayUser");
         workers.MapDelete("/{workerId}", async (string workerId, IWorkerManagementService workerManagementService, CancellationToken cancellationToken) =>
         {
             try
@@ -81,6 +97,17 @@ public static class GatewayEndpointRouteBuilderExtensions
             }
 
             await workerManagementService.RecordHeartbeatAsync(workerId, cancellationToken);
+            var worker = await workerManagementService.GetAsync(workerId, cancellationToken);
+            return worker is null ? Results.NotFound() : Results.Ok(worker);
+        }).RequireAuthorization("WorkerNode");
+        workers.MapPost("/{workerId}/unregister", async (string workerId, ClaimsPrincipal principal, IWorkerManagementService workerManagementService, CancellationToken cancellationToken) =>
+        {
+            if (!WorkerMatchesRequest(principal, workerId))
+            {
+                return Results.Forbid();
+            }
+
+            await workerManagementService.UnregisterAsync(workerId, cancellationToken);
             var worker = await workerManagementService.GetAsync(workerId, cancellationToken);
             return worker is null ? Results.NotFound() : Results.Ok(worker);
         }).RequireAuthorization("WorkerNode");

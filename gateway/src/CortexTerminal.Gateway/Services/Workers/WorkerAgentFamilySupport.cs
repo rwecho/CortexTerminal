@@ -4,7 +4,7 @@ namespace CortexTerminal.Gateway.Services.Workers;
 
 public static class WorkerAgentFamilySupport
 {
-    private static readonly string[] KnownAgentFamilies = ["claude", "codex", "gemini", "opencode"];
+    private static readonly string[] KnownAgentFamilies = ["claude", "codex", "gemini", "opencode", "copilot"];
 
     public static IReadOnlyList<string> AllAgentFamilies => KnownAgentFamilies;
 
@@ -27,7 +27,8 @@ public static class WorkerAgentFamilySupport
             }
         }
 
-        return KnownAgentFamilies;
+        var inferredFamily = NormalizeAgentFamily(InferAgentFamily(modelName));
+        return inferredFamily is null ? [KnownAgentFamilies[0]] : [inferredFamily];
     }
 
     public static string SerializeSupportedAgentFamilies(IReadOnlyList<string>? supportedAgentFamilies, string? modelName)
@@ -35,7 +36,8 @@ public static class WorkerAgentFamilySupport
         var normalizedFamilies = NormalizeFamilies(supportedAgentFamilies);
         if (normalizedFamilies.Length == 0)
         {
-            normalizedFamilies = [.. KnownAgentFamilies];
+            var inferredFamily = NormalizeAgentFamily(InferAgentFamily(modelName));
+            normalizedFamilies = inferredFamily is null ? [KnownAgentFamilies[0]] : [inferredFamily];
         }
 
         return JsonSerializer.Serialize(normalizedFamilies);
@@ -55,6 +57,13 @@ public static class WorkerAgentFamilySupport
         }
 
         var normalized = agentFamily.Trim().ToLowerInvariant();
+        if (normalized.Contains("github copilot", StringComparison.Ordinal)
+            || normalized == "copilot-cli"
+            || normalized == "copilot cli")
+        {
+            normalized = "copilot";
+        }
+
         return KnownAgentFamilies.Contains(normalized, StringComparer.Ordinal)
             ? normalized
             : null;
@@ -63,6 +72,11 @@ public static class WorkerAgentFamilySupport
     public static string InferAgentFamily(string? modelName)
     {
         var normalized = modelName?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        if (normalized.Contains("copilot", StringComparison.Ordinal))
+        {
+            return "copilot";
+        }
 
         if (normalized.Contains("codex", StringComparison.Ordinal))
         {

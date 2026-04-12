@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
 import {
   Select,
   SelectContent,
@@ -18,11 +17,14 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import {
+  doesWorkerSupportAgentFamily,
   getAgentLabel,
   getPathLabel,
   getWorkerSupportedAgentFamilies,
+  toUserFacingManagementError,
 } from "../app/appUtils";
 import type { AgentFamily } from "../app/appTypes";
+import { WorkerDirectoryPicker } from "./components/WorkerDirectoryPicker";
 
 type NewSessionPageProps = {
   workers: GatewayWorker[];
@@ -30,7 +32,6 @@ type NewSessionPageProps = {
   availableAgentFamilies: AgentFamily[];
   selectedWorkerId: string;
   selectedPath: string;
-  sessionDisplayName: string;
   isCreatingSession: boolean;
   managementError: string | null;
   onBack: () => void;
@@ -38,7 +39,6 @@ type NewSessionPageProps = {
   onAgentFamilyChange: (value: AgentFamily) => void;
   onWorkerChange: (value: string) => void;
   onPathChange: (value: string) => void;
-  onSessionDisplayNameChange: (value: string) => void;
   onCreateSession: () => void | Promise<void>;
 };
 
@@ -48,7 +48,6 @@ export function NewSessionPage({
   availableAgentFamilies,
   selectedWorkerId,
   selectedPath,
-  sessionDisplayName,
   isCreatingSession,
   managementError,
   onBack,
@@ -56,23 +55,32 @@ export function NewSessionPage({
   onAgentFamilyChange,
   onWorkerChange,
   onPathChange,
-  onSessionDisplayNameChange,
   onCreateSession,
 }: NewSessionPageProps) {
   const onlineWorkers = workers.filter((worker) => worker.isOnline);
+  const displayManagementError = managementError
+    ? toUserFacingManagementError(managementError)
+    : null;
   const selectedWorker =
     onlineWorkers.find((worker) => worker.workerId === selectedWorkerId) ??
     null;
   const selectedWorkerAgentFamilies =
     getWorkerSupportedAgentFamilies(selectedWorker);
-  const availablePaths = selectedWorker?.availablePaths ?? [];
+  const visibleAgentFamilies = selectedWorker
+    ? availableAgentFamilies.filter((agentFamily) =>
+        selectedWorkerAgentFamilies.includes(agentFamily),
+      )
+    : availableAgentFamilies;
   const canCreateSession =
-    !isCreatingSession && !!selectedWorker && !!selectedPath;
+    !isCreatingSession &&
+    !!selectedWorker &&
+    !!selectedPath &&
+    doesWorkerSupportAgentFamily(selectedWorker, selectedAgentFamily);
 
   return (
     <PageShell
       title="创建会话"
-      subtitle="选节点、选 runtime、选目录，然后进入终端。"
+      subtitle="需要自定义节点、runtime 或目录时，再用这个页面。"
       onBack={onBack}
       backLabel="back to home"
       headerAccessory={
@@ -82,32 +90,34 @@ export function NewSessionPage({
       }
     >
       <div className="space-y-5">
-        {managementError && (
+        {displayManagementError && (
           <div className="rounded-2xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-200">
-            {managementError}
+            {displayManagementError}
           </div>
         )}
 
         <Card>
           <CardHeader>
             <CardTitle>会话配置</CardTitle>
-            <CardDescription>只保留真正需要填写的内容。</CardDescription>
+            <CardDescription>保留必要项，其他都交给默认值。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-4 py-3 text-sm text-gray-300">
-              <div className="font-medium text-white">没有节点？</div>
-              <div className="mt-1 text-[12px] text-gray-400">
-                先生成唯一的安装命令，然后在电脑终端执行一次即可接入。
+            {onlineWorkers.length === 0 && (
+              <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-4 py-3 text-sm text-gray-300">
+                <div className="font-medium text-white">没有在线节点</div>
+                <div className="mt-1 text-[12px] text-gray-400">
+                  先生成安装命令，在电脑终端执行一次即可接入。
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={onOpenWorkerGuide}
+                  className="mt-3"
+                >
+                  去安装 Worker
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={onOpenWorkerGuide}
-                className="mt-3"
-              >
-                去安装 Worker
-              </Button>
-            </div>
+            )}
 
             <label className="space-y-2 text-[11px] text-gray-400">
               <span>执行节点</span>
@@ -164,7 +174,7 @@ export function NewSessionPage({
               <span>运行环境</span>
               {selectedWorker ? (
                 <div className="grid grid-cols-2 gap-2">
-                  {availableAgentFamilies.map((agentFamily) => {
+                  {visibleAgentFamilies.map((agentFamily) => {
                     const active = selectedAgentFamily === agentFamily;
 
                     return (
@@ -190,84 +200,40 @@ export function NewSessionPage({
             </label>
 
             {selectedWorker && (
-              <Card className="border-[#1f2a30] bg-[#0a0f12]">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-gray-500">
-                    <Server size={14} /> 当前节点
-                  </div>
-                  <div className="mt-2 wrap-break-word text-sm font-semibold text-white">
-                    {selectedWorker.displayName}
-                  </div>
-                  <div className="mt-1 wrap-break-word text-sm text-gray-400">
-                    {selectedWorker.modelName ??
-                      getAgentLabel(selectedAgentFamily)}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-4 py-3">
+                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-gray-500">
+                  <Server size={14} /> 当前节点
+                </div>
+                <div className="mt-2 wrap-break-word text-sm font-semibold text-white">
+                  {selectedWorker.displayName}
+                </div>
+                <div className="mt-1 wrap-break-word text-sm text-gray-400">
+                  {selectedWorker.modelName ??
+                    getAgentLabel(selectedAgentFamily)}
+                </div>
+              </div>
             )}
 
             <label className="space-y-1 text-[11px] text-gray-400">
               <span>工作目录</span>
-              {availablePaths.length > 0 ? (
-                <Select value={selectedPath} onValueChange={onPathChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择工作目录" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availablePaths.map((path) => (
-                      <SelectItem key={path} value={path}>
-                        {getPathLabel(path)} · {path}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="space-y-2">
-                  <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-3 py-3 text-sm text-gray-500">
-                    当前节点不限制预设目录，请直接输入目标服务器上的绝对路径。
-                  </div>
-                  <Input
-                    type="text"
-                    value={selectedPath}
-                    onChange={(event) => onPathChange(event.target.value)}
-                    placeholder="例如：/Users/echo/workspace/CortexTerminal"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                  />
-                </div>
-              )}
-            </label>
-
-            <Card className="border-[#1f2a30] bg-[#0a0f12]">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-gray-500">
-                  <FolderTree size={14} /> 目录预览
-                </div>
-                <div className="mt-2 break-all font-mono text-[12px] text-cyan-300">
-                  {selectedPath || "暂无可选路径"}
-                </div>
-              </CardContent>
-            </Card>
-
-            <label className="space-y-1 text-[11px] text-gray-400">
-              <span>会话名称</span>
               <div className="text-[11px] text-gray-500">
-                可选，不填会自动用目录名。
+                不再手填路径，直接从 worker 所在电脑的真实目录树里选择。
               </div>
-              <Input
-                type="text"
-                value={sessionDisplayName}
-                onChange={(event) =>
-                  onSessionDisplayNameChange(event.target.value)
-                }
-                placeholder={
-                  selectedPath
-                    ? `${getPathLabel(selectedPath)} 会话`
-                    : "输入会话名称"
-                }
+              <WorkerDirectoryPicker
+                worker={selectedWorker}
+                selectedPath={selectedPath}
+                onPathChange={onPathChange}
               />
             </label>
+
+            <div className="rounded-2xl border border-[#1f2a30] bg-[#0a0f12] px-4 py-3">
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-gray-500">
+                <FolderTree size={14} /> 目录预览
+              </div>
+              <div className="mt-2 break-all font-mono text-[12px] text-cyan-300">
+                {selectedPath || "暂无可选路径"}
+              </div>
+            </div>
 
             <Button
               type="button"

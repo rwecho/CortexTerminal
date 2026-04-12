@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { createManagementRealtimeClient } from "../../../lib/managementRealtimeClient";
+import { useCallback, useEffect, useRef } from "react";
 import { gatewayUrl } from "../../app/config";
 import { useAuthFailureHandler } from "../../app/hooks/useAuthFailureHandler";
 import { useManagementClient } from "../../app/hooks/useManagementClient";
+import { isNativeStartupRuntime } from "../../native/startup/nativeStartup";
+import {
+  configureNativeManagementRealtime,
+  disconnectNativeManagementRealtime,
+  getNativeBridgeSource,
+} from "../../native/bridge/nativeBridge";
+import { toUserFacingManagementError } from "../../app/appUtils";
 import {
   useAuthStore,
   selectIsAppLoggedIn,
@@ -13,6 +19,16 @@ import { useTerminalStore } from "../../terminal/store/useTerminalStore";
 type LoadManagementOptions = {
   showLoading?: boolean;
   preserveError?: boolean;
+};
+
+type NativeManagementEnvelope = {
+  type?: string;
+  payload?: {
+    reason?: string;
+    source?: string;
+    state?: string;
+    error?: string | null;
+  };
 };
 
 export function useLoadManagementData() {
@@ -62,7 +78,7 @@ export function useLoadManagementData() {
       } catch (error) {
         const message = (error as Error).message;
         if (!handleAuthFailure(message)) {
-          setManagementError(message);
+          setManagementError(toUserFacingManagementError(message));
         }
       } finally {
         if (showLoading) {
@@ -92,6 +108,8 @@ export function useSessionsOverviewSync() {
     (state) => state.setManagementError,
   );
   const refreshTimeoutRef = useRef<number | null>(null);
+  const isNativeRealtimeRuntime =
+    isNativeStartupRuntime() || getNativeBridgeSource() === "native";
 
   const scheduleManagementRefresh = useCallback(() => {
     if (refreshTimeoutRef.current !== null) {
@@ -107,16 +125,12 @@ export function useSessionsOverviewSync() {
     }, 150);
   }, [loadManagementData]);
 
-  const managementRealtimeClient = useMemo(
-    () =>
-      createManagementRealtimeClient(
-        gatewayUrl,
-        () => accessToken,
-        scheduleManagementRefresh,
-        scheduleManagementRefresh,
-      ),
-    [accessToken, scheduleManagementRefresh],
-  );
+  const refreshManagementSnapshot = useCallback(() => {
+    void loadManagementData({
+      showLoading: false,
+      preserveError: true,
+    });
+  }, [loadManagementData]);
 
   useEffect(() => {
     if (!isAppLoggedIn) {
@@ -133,23 +147,129 @@ export function useSessionsOverviewSync() {
       return;
     }
 
-    void managementRealtimeClient.connect().catch((error: Error) => {
-      if (!useSessionsStore.getState().managementError) {
-        setManagementError(error.message);
+    if (!isNativeRealtimeRuntime) {
+      return;
+    }
+
+    const handleNativeManagementMessage = (event: Event) => {
+      const customEvent = event as CustomEvent<{ message?: unknown }>;
+      const rawMessage = customEvent.detail?.message;
+
+      if (!rawMessage) {
+        return;
       }
-    });
+
+      try {
+        const data =
+          typeof rawMessage === "string"
+            ? (JSON.parse(rawMessage) as NativeManagementEnvelope)
+            : (rawMessage as NativeManagementEnvelope);
+
+        if (data.type === "managementInvalidated") {
+          scheduleManagementRefresh();
+          return;
+        }
+
+        if (data.type === "managementConnectionState") {
+          if (data.payload?.state === "closed" && data.payload.error) {
+            setManagementError(toUserFacingManagementError(data.payload.error));
+          }
+
+          if (
+            data.payload?.state === "reconnected" ||
+            data.payload?.state === "connected"
+          ) {
+            scheduleManagementRefresh();
+          }
+        }
+      } catch {
+        // Ignore unrelated raw native bridge messages.
+      }
+    };
+
+    window.addEventListener(
+      "HybridWebViewMessageReceived",
+      handleNativeManagementMessage,
+    );
+    window.addEventListener(
+      "CortexNativeManagementMessageReceived",
+      handleNativeManagementMessage,
+    );
 
     return () => {
-      void managementRealtimeClient.disconnect();
+      window.removeEventListener(
+        "HybridWebViewMessageReceived",
+        handleNativeManagementMessage,
+      );
+      window.removeEventListener(
+        "CortexNativeManagementMessageReceived",
+        handleNativeManagementMessage,
+      );
+    };
+  }, [
+    accessToken,
+    isAppLoggedIn,
+    isNativeRealtimeRuntime,
+    scheduleManagementRefresh,
+    setManagementError,
+  ]);
+
+  useEffect(() => {
+    if (!isAppLoggedIn || !accessToken) {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      refreshManagementSnapshot();
+    };
+
+    const handleWindowFocus = () => {
+      refreshManagementSnapshot();
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("pageshow", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("pageshow", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [accessToken, isAppLoggedIn, refreshManagementSnapshot]);
+
+  useEffect(() => {
+    if (!isAppLoggedIn || !accessToken) {
+      return;
+    }
+
+    if (!isNativeRealtimeRuntime) {
+      return () => {
+        if (refreshTimeoutRef.current !== null) {
+          window.clearTimeout(refreshTimeoutRef.current);
+          refreshTimeoutRef.current = null;
+        }
+      };
+    }
+
+    void configureNativeManagementRealtime(gatewayUrl, accessToken).catch(
+      (error: Error) => {
+        if (!useSessionsStore.getState().managementError) {
+          setManagementError(toUserFacingManagementError(error.message));
+        }
+      },
+    );
+
+    return () => {
+      void disconnectNativeManagementRealtime();
       if (refreshTimeoutRef.current !== null) {
         window.clearTimeout(refreshTimeoutRef.current);
         refreshTimeoutRef.current = null;
       }
     };
-  }, [
-    accessToken,
-    isAppLoggedIn,
-    managementRealtimeClient,
-    setManagementError,
-  ]);
+  }, [accessToken, isAppLoggedIn, isNativeRealtimeRuntime, setManagementError]);
 }

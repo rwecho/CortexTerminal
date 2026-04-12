@@ -9,7 +9,9 @@ public sealed record WorkerRuntimeLaunchPlan(
     string WorkingDirectory,
     string[] CommandLine,
     IReadOnlyDictionary<string, string> Environment,
-    IReadOnlyList<string>? RuntimeArguments = null)
+    IReadOnlyList<string>? RuntimeArguments = null,
+    int InitialCols = 120,
+    int InitialRows = 40)
 {
     public PtyOptions ToPtyOptions()
     {
@@ -18,7 +20,9 @@ public sealed record WorkerRuntimeLaunchPlan(
             App = ShellApp,
             Cwd = WorkingDirectory,
             CommandLine = CommandLine,
-            Environment = new Dictionary<string, string>(Environment, StringComparer.Ordinal)
+            Environment = new Dictionary<string, string>(Environment, StringComparer.Ordinal),
+            Cols = InitialCols,
+            Rows = InitialRows
         };
     }
 }

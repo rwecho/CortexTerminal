@@ -19,7 +19,7 @@ public sealed class WorkerHostOptionsTests
         Assert.Equal(
             HttpTransportType.WebSockets | HttpTransportType.ServerSentEvents | HttpTransportType.LongPolling,
             options.WorkerHubTransport);
-        Assert.Equal(TimeSpan.FromSeconds(5), options.WorkerHeartbeatInterval);
+        Assert.Equal(TimeSpan.FromSeconds(1), options.WorkerHeartbeatInterval);
         Assert.Equal(TimeSpan.FromMinutes(20), options.WorkerSessionMaintenance.IdleTimeout);
         Assert.Equal(TimeSpan.FromMinutes(2), options.WorkerSessionMaintenance.DisconnectedGracePeriod);
         Assert.Equal(TimeSpan.FromSeconds(30), options.WorkerSessionMaintenance.SweepInterval);
@@ -31,11 +31,18 @@ public sealed class WorkerHostOptionsTests
     [Fact]
     public void LoadFromEnvironment_ParsesEssentialDeploymentConfiguration()
     {
+        var firstAvailablePath = Path.Combine(Path.GetTempPath(), "cortex-terminal-worker-path-1");
+        var secondAvailablePath = Path.Combine(Path.GetTempPath(), "cortex-terminal-worker-path-2");
+        var trailingAvailablePath = secondAvailablePath + " ";
         using var scope = new EnvironmentVariableScope(new Dictionary<string, string?>
         {
             ["WORKER_ID"] = "worker-custom",
             ["GATEWAY_BASE_URL"] = "https://gateway.example.com",
+            ["WORKER_DISPLAY_NAME"] = "Worker Custom Display",
+            ["WORKER_MODEL_NAME"] = "Codex CLI",
+            ["WORKER_RUNTIME_COMMAND"] = "codex",
             ["WORKER_SUPPORTED_AGENT_FAMILIES"] = "codex,claude",
+            ["WORKER_AVAILABLE_PATHS"] = $"{firstAvailablePath};{trailingAvailablePath}",
             ["WORKER_LOG_LEVEL"] = "Debug"
         });
 
@@ -43,12 +50,14 @@ public sealed class WorkerHostOptionsTests
 
         Assert.Equal("worker-custom", options.WorkerId);
         Assert.Equal("https://gateway.example.com", options.GatewayBaseUrl);
-        Assert.Equal("worker-custom", options.WorkerDisplayName);
-        Assert.Equal("Multi-runtime worker (codex, claude)", options.WorkerModelName);
+        Assert.Equal("Worker Custom Display", options.WorkerDisplayName);
+        Assert.Equal("Codex CLI", options.WorkerModelName);
         Assert.Equal("codex", options.WorkerRuntimeCommand);
         Assert.Equal(LogLevel.Debug, options.WorkerLogLevel);
         Assert.Equal(["codex", "claude"], options.WorkerSupportedAgentFamilies);
-        Assert.Empty(options.WorkerAvailablePaths);
+        Assert.Equal(
+            [Path.GetFullPath(firstAvailablePath), Path.GetFullPath(trailingAvailablePath)],
+            options.WorkerAvailablePaths);
     }
 
     private sealed class EnvironmentVariableScope : IDisposable

@@ -1,4 +1,4 @@
-export type AccessTokenProvider = () => string | null;
+export type AccessTokenProvider = () => string | Promise<string | null> | null;
 
 export type GatewayWorker = {
   workerId: string;
@@ -12,6 +12,19 @@ export type GatewayWorker = {
   updatedAtUtc: string;
   lastHeartbeatAtUtc?: string | null;
   isOnline: boolean;
+};
+
+export type WorkerDirectoryEntry = {
+  path: string;
+  name: string;
+  hasChildren: boolean;
+  isRoot: boolean;
+};
+
+export type WorkerDirectoryBrowseResponse = {
+  workerId: string;
+  requestedPath?: string | null;
+  entries: WorkerDirectoryEntry[];
 };
 
 export type GatewaySession = {
@@ -89,8 +102,10 @@ async function readJsonOrThrow<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-function createHeaders(accessTokenProvider?: AccessTokenProvider): HeadersInit {
-  const accessToken = accessTokenProvider?.();
+async function createHeaders(
+  accessTokenProvider?: AccessTokenProvider,
+): Promise<HeadersInit> {
+  const accessToken = await accessTokenProvider?.();
   return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }
 
@@ -104,7 +119,7 @@ export function createGatewayManagementClient(
     async listWorkers(): Promise<GatewayWorker[]> {
       try {
         const response = await fetch(`${apiBaseUrl}/workers`, {
-          headers: createHeaders(accessTokenProvider),
+          headers: await createHeaders(accessTokenProvider),
         });
         return readJsonOrThrow<GatewayWorker[]>(response);
       } catch (error) {
@@ -115,7 +130,7 @@ export function createGatewayManagementClient(
     async listSessions(): Promise<GatewaySession[]> {
       try {
         const response = await fetch(`${apiBaseUrl}/sessions`, {
-          headers: createHeaders(accessTokenProvider),
+          headers: await createHeaders(accessTokenProvider),
         });
         return readJsonOrThrow<GatewaySession[]>(response);
       } catch (error) {
@@ -131,7 +146,7 @@ export function createGatewayManagementClient(
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...createHeaders(accessTokenProvider),
+            ...(await createHeaders(accessTokenProvider)),
           },
           body: JSON.stringify(payload),
         });
@@ -148,7 +163,7 @@ export function createGatewayManagementClient(
           `${apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/close`,
           {
             method: "POST",
-            headers: createHeaders(accessTokenProvider),
+            headers: await createHeaders(accessTokenProvider),
           },
         );
 
@@ -164,7 +179,7 @@ export function createGatewayManagementClient(
           `${apiBaseUrl}/workers/${encodeURIComponent(workerId)}`,
           {
             method: "DELETE",
-            headers: createHeaders(accessTokenProvider),
+            headers: await createHeaders(accessTokenProvider),
           },
         );
 
@@ -176,12 +191,33 @@ export function createGatewayManagementClient(
       }
     },
 
+    async browseWorkerDirectories(
+      workerId: string,
+      path?: string,
+    ): Promise<WorkerDirectoryBrowseResponse> {
+      try {
+        const query = path
+          ? `?path=${encodeURIComponent(path)}`
+          : "";
+        const response = await fetch(
+          `${apiBaseUrl}/workers/${encodeURIComponent(workerId)}/directories${query}`,
+          {
+            headers: await createHeaders(accessTokenProvider),
+          },
+        );
+
+        return readJsonOrThrow<WorkerDirectoryBrowseResponse>(response);
+      } catch (error) {
+        throw normalizeGatewayRequestError(error, apiBaseUrl);
+      }
+    },
+
     async listAuditEntries(take = 100): Promise<GatewayAuditEntry[]> {
       try {
         const response = await fetch(
           `${apiBaseUrl}/audit?take=${encodeURIComponent(String(take))}`,
           {
-            headers: createHeaders(accessTokenProvider),
+            headers: await createHeaders(accessTokenProvider),
           },
         );
 

@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:maui-shell": "npm run build && node ./scripts/sync-maui-web-assets.mjs",
     "preview": "vite preview",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:real-harness": "node ./playwright/real-session-harness.mjs"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",

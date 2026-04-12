@@ -11,8 +11,6 @@ import type { GatewayPrincipal } from "../../lib/gatewayAuthClient";
 import { getAppVersionLabel } from "../app/config";
 import {
   formatStartupVersionLabel,
-  getStartupConfig,
-  isNativeStartupFallback,
   refreshStartupConfig,
 } from "../native/startup/nativeStartup";
 import { PageShell } from "../../components/layout/PageShell";
@@ -33,11 +31,6 @@ export function SettingsPage({
   onSignOut,
 }: SettingsPageProps) {
   const [versionLabel, setVersionLabel] = useState(() => getAppVersionLabel());
-  const [versionHint, setVersionHint] = useState<string | null>(() =>
-    isNativeStartupFallback(getStartupConfig())
-      ? "当前未收到 native startup config。"
-      : null,
-  );
 
   useEffect(() => {
     let isCancelled = false;
@@ -48,11 +41,6 @@ export function SettingsPage({
       }
 
       setVersionLabel(formatStartupVersionLabel(config));
-      setVersionHint(
-        isNativeStartupFallback(config)
-          ? "当前未收到 native startup config。"
-          : null,
-      );
     });
 
     return () => {
@@ -73,10 +61,10 @@ export function SettingsPage({
                 <div className="text-lg font-semibold text-white">
                   {currentPrincipal?.displayName ??
                     currentPrincipal?.username ??
-                    "Unknown user"}
+                    "当前用户"}
                 </div>
                 <div className="mt-1 break-all text-sm text-gray-400">
-                  {currentPrincipal?.email ?? "No email configured"}
+                  {currentPrincipal?.email ?? "未设置邮箱"}
                 </div>
                 <div className="mt-3 text-[12px] text-gray-500">
                   当前账号已登录，可直接管理 Worker 与审计记录。
@@ -135,11 +123,6 @@ export function SettingsPage({
                 <div className="mt-1 text-[12px] text-gray-400">
                   当前 App 版本：{versionLabel}
                 </div>
-                {versionHint ? (
-                  <div className="mt-1 text-[11px] text-amber-300/80">
-                    {versionHint}
-                  </div>
-                ) : null}
               </div>
             </div>
           </CardContent>

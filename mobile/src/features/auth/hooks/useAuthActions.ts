@@ -3,6 +3,7 @@ import { createGatewayAuthClient } from "../../../lib/gatewayAuthClient";
 import { gatewayUrl } from "../../app/config";
 import { useAuthStore } from "../store/useAuthStore";
 import { useResetApplicationState } from "../../app/hooks/useResetApplicationState";
+import { createPersistedGatewayAuthSession } from "../authSessionStorage";
 
 export function useAuthActions() {
   const resetApplicationState = useResetApplicationState();
@@ -46,7 +47,10 @@ export function useAuthActions() {
 
       const tokenResponse = await authClient.login(username, password);
       const principal = await authClient.me(tokenResponse.access_token);
-      applyAuthentication(tokenResponse.access_token, principal);
+      applyAuthentication(
+        createPersistedGatewayAuthSession(tokenResponse),
+        principal,
+      );
     } catch (error) {
       setAuthError((error as Error).message);
     } finally {

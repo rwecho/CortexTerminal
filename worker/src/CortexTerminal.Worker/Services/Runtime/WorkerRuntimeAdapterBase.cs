@@ -6,6 +6,10 @@ public abstract class WorkerRuntimeAdapterBase(string agentFamily) : IWorkerRunt
 
     public virtual bool SupportsResume => false;
 
+    public virtual bool RequiresPromptReadiness => false;
+
+    public virtual TimeSpan PromptReadyFallbackDelay => TimeSpan.Zero;
+
     public virtual WorkerRuntimeLaunchPlan BuildFreshPlan(WorkerRuntimeLaunchRequest request)
     {
         ValidateRequest(request);
@@ -17,6 +21,10 @@ public abstract class WorkerRuntimeAdapterBase(string agentFamily) : IWorkerRunt
         ValidateRequest(request);
         throw new NotSupportedException($"Runtime adapter '{AgentFamily}' does not support session resume.");
     }
+
+    public virtual bool IsPromptReady(string transcript) => false;
+
+    public virtual bool IsPromptBlocked(string transcript) => false;
 
     protected static void ValidateRequest(WorkerRuntimeLaunchRequest request)
     {

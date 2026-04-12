@@ -197,6 +197,51 @@ public sealed class WorkerManagementServiceTests
     }
 
     [Fact]
+    public async Task UnregisterAsync_WithActiveWorker_ImmediatelyMarksOfflineAndDisconnectsSessions()
+    {
+        await using var dbContext = CreateDbContext();
+        var presenceStore = new FakeWorkerPresenceStore();
+        var auditTrailService = new FakeAuditTrailService();
+        var eventPublisher = new FakeManagementEventPublisher();
+        var service = new WorkerManagementService(dbContext, presenceStore, auditTrailService, eventPublisher);
+
+        dbContext.Workers.Add(new WorkerNodeRecord
+        {
+            WorkerId = "worker-unregister",
+            DisplayName = "Worker Unregister",
+            State = WorkerLifecycleState.Online,
+            CurrentConnectionId = "conn-unregister",
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
+        });
+        dbContext.Sessions.Add(new CortexTerminal.Gateway.Models.Sessions.GatewaySessionRecord
+        {
+            SessionId = "session-unregister",
+            WorkerId = "worker-unregister",
+            DisplayName = "Session Unregister",
+            WorkingDirectory = "/workspace/unregister",
+            State = CortexTerminal.Gateway.Models.Sessions.SessionLifecycleState.Active,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        });
+        presenceStore.SetWorkerPresence("worker-unregister", "conn-unregister", DateTime.UtcNow);
+        await dbContext.SaveChangesAsync();
+
+        await service.UnregisterAsync("worker-unregister", CancellationToken.None);
+
+        var worker = await dbContext.Workers.SingleAsync(candidate => candidate.WorkerId == "worker-unregister");
+        Assert.Equal(WorkerLifecycleState.Offline, worker.State);
+        Assert.Null(worker.CurrentConnectionId);
+
+        var session = await dbContext.Sessions.SingleAsync(candidate => candidate.SessionId == "session-unregister");
+        Assert.Equal(CortexTerminal.Gateway.Models.Sessions.SessionLifecycleState.Disconnected, session.State);
+        Assert.Null(await presenceStore.GetWorkerPresenceAsync("worker-unregister", CancellationToken.None));
+        Assert.Null(await presenceStore.GetSessionPresenceAsync("session-unregister", CancellationToken.None));
+        Assert.Equal(1, eventPublisher.WorkersChangedCount);
+        Assert.Equal(1, eventPublisher.SessionsChangedCount);
+    }
+
+    [Fact]
     public async Task UpsertAsync_PreservesAvailablePathTrailingWhitespace()
     {
         await using var dbContext = CreateDbContext();

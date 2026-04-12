@@ -13,6 +13,7 @@ public static class WorkerEnvironmentDoctor
         new("npx", "npx", ["--version"]),
         new("dotnet", "dotnet", ["--version"]),
         new("claude", "claude", ["--version"]),
+        new("copilot", "copilot", ["--version"]),
         new("codex", "codex", ["--version"]),
         new("opencode", "opencode", ["--version"]),
         new("gemini", "gemini", ["--version"]),

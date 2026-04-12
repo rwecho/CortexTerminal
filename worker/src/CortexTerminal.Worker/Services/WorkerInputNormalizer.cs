@@ -4,7 +4,7 @@ public static class WorkerInputNormalizer
 {
     public static string NormalizeAgentInput(string inbound)
     {
-        var knownPrefixes = new[] { "/claude ", "/codex ", "/gemini ", "/opencode ", "/open code " };
+        var knownPrefixes = new[] { "/claude ", "/codex ", "/gemini ", "/opencode ", "/open code ", "/copilot ", "/github copilot " };
 
         foreach (var prefix in knownPrefixes)
         {

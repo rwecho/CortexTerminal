@@ -242,6 +242,54 @@ public sealed class WorkerManagementService(
         await managementEventPublisher.PublishSessionsChangedAsync();
     }
 
+    public async Task UnregisterAsync(string workerId, CancellationToken cancellationToken)
+    {
+        var normalizedWorkerId = workerId.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedWorkerId))
+        {
+            throw new InvalidOperationException("WorkerId is required.");
+        }
+
+        var worker = await dbContext.Workers
+            .FirstOrDefaultAsync(candidate => candidate.WorkerId == normalizedWorkerId, cancellationToken);
+
+        if (worker is null)
+        {
+            return;
+        }
+
+        var utcNow = DateTime.UtcNow;
+        worker.State = WorkerLifecycleState.Offline;
+        worker.CurrentConnectionId = null;
+        worker.UpdatedAtUtc = utcNow;
+
+        await workerPresenceStore.MarkWorkerOfflineAsync(normalizedWorkerId, cancellationToken);
+
+        var sessions = await dbContext.Sessions
+            .Where(session => session.WorkerId == normalizedWorkerId && session.State == SessionLifecycleState.Active)
+            .ToListAsync(cancellationToken);
+
+        foreach (var session in sessions)
+        {
+            session.State = SessionLifecycleState.Disconnected;
+            session.UpdatedAtUtc = utcNow;
+            await workerPresenceStore.RemoveSessionAsync(session.SessionId, cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await auditTrailService.WriteAsync(
+            new AuditWriteRequest(
+                "worker",
+                "disconnected",
+                $"节点 {worker.DisplayName} 已主动下线。",
+                ActorType: "worker",
+                ActorId: worker.WorkerId,
+                WorkerId: worker.WorkerId),
+            cancellationToken);
+        await managementEventPublisher.PublishWorkersChangedAsync();
+        await managementEventPublisher.PublishSessionsChangedAsync();
+    }
+
     public async Task RecordHeartbeatAsync(string workerId, CancellationToken cancellationToken)
     {
         var worker = await EnsureWorkerAsync(workerId, cancellationToken);

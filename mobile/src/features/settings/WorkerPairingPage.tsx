@@ -1,20 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Check,
-  Copy,
-  Fingerprint,
-  MonitorSmartphone,
-  Share2,
-} from "lucide-react";
+import { Check, Copy, Fingerprint, MonitorSmartphone } from "lucide-react";
 import { PageShell } from "../../components/layout/PageShell";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import type { WorkerInstallCommandSet } from "../../lib/gatewayAuthClient";
-import {
-  copyNativeText,
-  shareNativeText,
-  showNativeToast,
-} from "../native/bridge/nativeBridge";
+import { copyNativeText, showNativeToast } from "../native/bridge/nativeBridge";
 
 type InstallPlatform = "unix" | "windows";
 
@@ -39,7 +29,6 @@ export function WorkerPairingPage({
   const [selectedPlatform, setSelectedPlatform] = useState<InstallPlatform>(
     defaultInstallPlatform,
   );
-  const [isSharing, setIsSharing] = useState(false);
   const [copiedPlatform, setCopiedPlatform] = useState<InstallPlatform | null>(
     null,
   );
@@ -99,34 +88,10 @@ export function WorkerPairingPage({
     await showNativeToast("安装命令已复制");
   };
 
-  const handleShareCommand = async () => {
-    if (!selectedCommand) {
-      return;
-    }
-
-    try {
-      setIsSharing(true);
-      const didShare = await shareNativeText({
-        title:
-          selectedPlatform === "windows"
-            ? "Cortex Terminal Worker 安装命令（Windows）"
-            : "Cortex Terminal Worker 安装命令（macOS / Linux）",
-        text: selectedCommand,
-      });
-
-      if (!didShare) {
-        setCopiedPlatform(selectedPlatform);
-        await showNativeToast("当前环境不支持系统分享，已自动复制命令");
-      }
-    } finally {
-      setIsSharing(false);
-    }
-  };
-
   return (
     <PageShell
       title="安装 Worker"
-      subtitle="进入页面即获取最新安装命令。"
+      subtitle="复制命令到目标电脑并执行一次。"
       onBack={onBack}
       backLabel="back to settings"
     >
@@ -212,18 +177,6 @@ export function WorkerPairingPage({
                         <Copy size={14} />
                       )}
                       {copiedPlatform === selectedPlatform ? "已复制" : "复制"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        void handleShareCommand();
-                      }}
-                      disabled={isSharing}
-                    >
-                      <Share2 size={14} />
-                      {isSharing ? "分享中..." : "分享"}
                     </Button>
                   </div>
                   <button

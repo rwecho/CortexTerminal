@@ -96,7 +96,7 @@ public static class GatewayAuthenticationServiceCollectionExtensions
                 options.RegisterScopes("gateway.api", "relay.connect", "worker.manage", Scopes.OfflineAccess);
 
                 options.SetAccessTokenLifetime(TimeSpan.FromHours(1));
-                options.SetRefreshTokenLifetime(TimeSpan.FromDays(14));
+                options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
 
                 options.AddDevelopmentEncryptionCertificate()
                     .AddDevelopmentSigningCertificate();

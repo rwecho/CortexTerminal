@@ -12,6 +12,7 @@ import { createRelayClient, type RelayClient } from "../../../lib/relayClient";
 import { gatewayUrl } from "../../app/config";
 import { buildAppPath } from "../../app/routeUtils";
 import { useAuthFailureHandler } from "../../app/hooks/useAuthFailureHandler";
+import { getValidAccessToken } from "../../auth/authSessionService";
 import {
   selectIsAppLoggedIn,
   useAuthStore,
@@ -23,7 +24,13 @@ import {
   detectTerminalInteraction,
   type TerminalInteractionAction,
 } from "../interactionDetector";
-import { buildSessionBootLogs, createRequestId } from "../../app/appUtils";
+import {
+  buildSessionBootLogs,
+  createRequestId,
+  getAgentLabel,
+  inferAgentFamily,
+  toUserFacingManagementError,
+} from "../../app/appUtils";
 import { buildSessionAccessError } from "../terminalUtils";
 import {
   deriveTerminalRecoverySnapshot,
@@ -43,15 +50,70 @@ import type { PendingAttachment } from "../terminalAttachmentTypes";
 import {
   buildAttachmentCommandPayload,
   buildDoctorCommandPayload,
+  buildTerminalResizePayload,
 } from "../relayControlFrames";
+import { buildRuntimeShortcuts } from "../terminalShortcuts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const sessionReadyTimeoutMs = 30_000;
+
+type OutboundFrame = {
+  sessionId: string;
+  payload: Uint8Array;
+  metadata: {
+    requestId?: string;
+    traceId?: string;
+  };
+};
+
+type SessionReadyWaiter = {
+  promise: Promise<boolean>;
+  resolve: (ready: boolean) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
+type TerminalSize = {
+  cols: number;
+  rows: number;
+};
+
+const minTerminalColumns = 40;
+const minTerminalRows = 12;
+
+function normalizeTerminalSize(cols: number, rows: number): TerminalSize {
+  return {
+    cols: Math.max(minTerminalColumns, Math.floor(cols)),
+    rows: Math.max(minTerminalRows, Math.floor(rows)),
+  };
+}
+
+function resolveActiveSession(
+  sessions: GatewaySession[],
+  activeSessionId: string | null,
+  routedSessionId: string | undefined,
+) {
+  if (activeSessionId) {
+    const activeSession = sessions.find(
+      (session) => session.sessionId === activeSessionId,
+    );
+    if (activeSession) {
+      return activeSession;
+    }
+  }
+
+  if (!routedSessionId) {
+    return null;
+  }
+
+  return (
+    sessions.find((session) => session.sessionId === routedSessionId) ?? null
+  );
+}
 
 export function useTerminalRuntime() {
   const { sessionId: routedSessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const accessToken = useAuthStore((state) => state.accessToken);
   const isAuthBootstrapping = useAuthStore(
     (state) => state.isAuthBootstrapping,
   );
@@ -128,12 +190,19 @@ export function useTerminalRuntime() {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const flushedLogIndexRef = useRef(0);
   const activeSessionRef = useRef(
-    sessions.find((session) => session.sessionId === activeSessionId) ?? null,
+    resolveActiveSession(sessions, activeSessionId, routedSessionId),
   );
   const traceIdRef = useRef(traceId);
   const terminalTranscriptRef = useRef("");
   const bootstrappedSessionIdRef = useRef<string | null>(null);
   const relayClientRef = useRef<RelayClient | null>(null);
+  const readySessionIdRef = useRef<string | null>(null);
+  const sessionReadyWaitersRef = useRef<Map<string, SessionReadyWaiter>>(
+    new Map(),
+  );
+  const outboundQueueRef = useRef<Map<string, OutboundFrame[]>>(new Map());
+  const terminalSizeRef = useRef<TerminalSize | null>(null);
+  const lastSentTerminalSizeRef = useRef<Map<string, string>>(new Map());
 
   const createPendingFileAttachment = useCallback(
     (pickedFile: NativePickedFile): PendingAttachment => ({
@@ -165,15 +234,33 @@ export function useTerminalRuntime() {
   );
 
   const activeSession = useMemo(
-    () =>
-      sessions.find((session) => session.sessionId === activeSessionId) ?? null,
-    [activeSessionId, sessions],
+    () => resolveActiveSession(sessions, activeSessionId, routedSessionId),
+    [activeSessionId, routedSessionId, sessions],
   );
   const activeWorker = useMemo(
     () =>
       workers.find((worker) => worker.workerId === activeSession?.workerId) ??
       null,
     [activeSession?.workerId, workers],
+  );
+  const activeAgentFamily = useMemo(() => {
+    const sessionAgentFamily = activeSession?.agentFamily?.trim().toLowerCase();
+
+    return sessionAgentFamily === "claude" ||
+      sessionAgentFamily === "codex" ||
+      sessionAgentFamily === "gemini" ||
+      sessionAgentFamily === "opencode" ||
+      sessionAgentFamily === "copilot"
+      ? sessionAgentFamily
+      : inferAgentFamily(activeWorker?.modelName);
+  }, [activeSession?.agentFamily, activeWorker?.modelName]);
+  const runtimeShortcutLabel = useMemo(
+    () => `${getAgentLabel(activeAgentFamily)} 快捷键`,
+    [activeAgentFamily],
+  );
+  const runtimeShortcuts = useMemo(
+    () => buildRuntimeShortcuts(activeAgentFamily),
+    [activeAgentFamily],
   );
 
   const showInteractionComposer =
@@ -224,6 +311,176 @@ export function useTerminalRuntime() {
     [setIsInteractionCustomInputVisible, setTerminalInteraction],
   );
 
+  const resetSessionReadyState = useCallback((sessionId?: string | null) => {
+    if (!sessionId) {
+      readySessionIdRef.current = null;
+      return;
+    }
+
+    if (readySessionIdRef.current === sessionId) {
+      readySessionIdRef.current = null;
+    }
+  }, []);
+
+  const waitForSessionReady = useCallback(
+    (sessionId: string, timeoutMs = sessionReadyTimeoutMs) => {
+      if (readySessionIdRef.current === sessionId) {
+        return Promise.resolve(true);
+      }
+
+      const existingWaiter = sessionReadyWaitersRef.current.get(sessionId);
+      if (existingWaiter) {
+        return existingWaiter.promise;
+      }
+
+      let resolveWaiter: ((ready: boolean) => void) | null = null;
+      const promise = new Promise<boolean>((resolve) => {
+        resolveWaiter = resolve;
+      });
+
+      const timeoutId = setTimeout(() => {
+        const waiter = sessionReadyWaitersRef.current.get(sessionId);
+        if (!waiter || waiter.promise !== promise) {
+          return;
+        }
+
+        sessionReadyWaitersRef.current.delete(sessionId);
+        resolveWaiter?.(false);
+      }, timeoutMs);
+
+      sessionReadyWaitersRef.current.set(sessionId, {
+        promise,
+        resolve: (ready) => {
+          clearTimeout(timeoutId);
+          sessionReadyWaitersRef.current.delete(sessionId);
+          resolveWaiter?.(ready);
+        },
+        timeoutId,
+      });
+
+      return promise;
+    },
+    [],
+  );
+
+  const markSessionReady = useCallback((sessionId: string) => {
+    readySessionIdRef.current = sessionId;
+    sessionReadyWaitersRef.current.get(sessionId)?.resolve(true);
+  }, []);
+
+  const failSessionReady = useCallback((sessionId?: string | null) => {
+    if (!sessionId) {
+      return;
+    }
+
+    if (readySessionIdRef.current === sessionId) {
+      readySessionIdRef.current = null;
+    }
+
+    sessionReadyWaitersRef.current.get(sessionId)?.resolve(false);
+  }, []);
+
+  const setMeasuredTerminalSize = useCallback((cols: number, rows: number) => {
+    const nextSize = normalizeTerminalSize(cols, rows);
+    const previousSize = terminalSizeRef.current;
+
+    if (
+      previousSize?.cols === nextSize.cols &&
+      previousSize.rows === nextSize.rows
+    ) {
+      return false;
+    }
+
+    terminalSizeRef.current = nextSize;
+    return true;
+  }, []);
+
+  const sendTerminalResize = useCallback(async (force = false) => {
+    const currentSession = activeSessionRef.current;
+    const client = relayClientRef.current;
+    const size = terminalSizeRef.current;
+
+    if (!currentSession || !client?.isConnected() || !size) {
+      return false;
+    }
+
+    const sizeKey = `${size.cols}x${size.rows}`;
+    if (
+      !force &&
+      lastSentTerminalSizeRef.current.get(currentSession.sessionId) === sizeKey
+    ) {
+      return true;
+    }
+
+    await client.sendMobileFrame(
+      currentSession.sessionId,
+      buildTerminalResizePayload(size.cols, size.rows),
+      {
+        requestId: `sys-resize-${Date.now()}`,
+        traceId: traceIdRef.current,
+      },
+    );
+
+    lastSentTerminalSizeRef.current.set(currentSession.sessionId, sizeKey);
+    return true;
+  }, []);
+
+  const enqueueOutboundFrame = useCallback(
+    (frame: OutboundFrame, pendingMessage: string) => {
+      const queue = outboundQueueRef.current.get(frame.sessionId) ?? [];
+      const wasEmpty = queue.length === 0;
+      queue.push(frame);
+      outboundQueueRef.current.set(frame.sessionId, queue);
+
+      if (wasEmpty) {
+        appendTerminalLogs([{ type: "system", text: pendingMessage }]);
+      }
+    },
+    [appendTerminalLogs],
+  );
+
+  const flushOutboundQueue = useCallback(
+    async (sessionId: string) => {
+      if (readySessionIdRef.current !== sessionId) {
+        return false;
+      }
+
+      const client = relayClientRef.current;
+      if (!client?.isConnected()) {
+        return false;
+      }
+
+      const queue = outboundQueueRef.current.get(sessionId);
+      if (!queue || queue.length === 0) {
+        return true;
+      }
+
+      while (queue.length > 0) {
+        const nextFrame = queue[0];
+        try {
+          await client.sendMobileFrame(
+            nextFrame.sessionId,
+            nextFrame.payload,
+            nextFrame.metadata,
+          );
+          queue.shift();
+        } catch (error) {
+          appendTerminalLogs([
+            {
+              type: "system",
+              text: `Queued send failed: ${(error as Error).message}`,
+            },
+          ]);
+          return false;
+        }
+      }
+
+      outboundQueueRef.current.delete(sessionId);
+      return true;
+    },
+    [appendTerminalLogs],
+  );
+
   const reattachCurrentSession = useCallback(async () => {
     const currentSession = activeSessionRef.current;
     const client = relayClientRef.current;
@@ -233,6 +490,7 @@ export function useTerminalRuntime() {
     }
 
     try {
+      resetSessionReadyState(currentSession.sessionId);
       setConnectionState("connecting");
       setManagementError(null);
       appendTerminalLogs([
@@ -244,6 +502,24 @@ export function useTerminalRuntime() {
 
       await client.connect(currentSession.sessionId, currentSession.workerId);
       setCurrentPath(currentSession.workingDirectory ?? "/claude");
+      const measuredTerminalSize = terminalSizeRef.current;
+      if (measuredTerminalSize) {
+        await client.sendMobileFrame(
+          currentSession.sessionId,
+          buildTerminalResizePayload(
+            measuredTerminalSize.cols,
+            measuredTerminalSize.rows,
+          ),
+          {
+            requestId: `sys-resize-reattach-${Date.now()}`,
+            traceId: traceIdRef.current,
+          },
+        );
+        lastSentTerminalSizeRef.current.set(
+          currentSession.sessionId,
+          `${measuredTerminalSize.cols}x${measuredTerminalSize.rows}`,
+        );
+      }
       await client.sendMobileFrame(
         currentSession.sessionId,
         encoder.encode("__ct_init__"),
@@ -252,6 +528,7 @@ export function useTerminalRuntime() {
           traceId: traceIdRef.current,
         },
       );
+      await waitForSessionReady(currentSession.sessionId);
     } catch (error) {
       const message = (error as Error).message;
 
@@ -272,9 +549,12 @@ export function useTerminalRuntime() {
   }, [
     appendTerminalLogs,
     handleAuthFailure,
+    resetSessionReadyState,
     setConnectionState,
     setCurrentPath,
     setManagementError,
+    waitForSessionReady,
+    sendTerminalResize,
   ]);
 
   const relayClient = useMemo(
@@ -290,6 +570,7 @@ export function useTerminalRuntime() {
 
           if (text.startsWith("__ct_ready__:")) {
             const path = text.slice("__ct_ready__:".length).trim();
+            markSessionReady(sessionId);
             setCurrentPath(
               path.length > 0
                 ? path
@@ -302,6 +583,7 @@ export function useTerminalRuntime() {
                 text: `Session ready${path ? `: ${path}` : ""}`,
               },
             ]);
+            void flushOutboundQueue(sessionId);
             return;
           }
 
@@ -351,9 +633,10 @@ export function useTerminalRuntime() {
             { type: "ai", text: `${requestText}${traceText}${text}` },
           ]);
         },
-        () => accessToken,
+        getValidAccessToken,
         {
           onReconnecting: (error) => {
+            failSessionReady(activeSessionRef.current?.sessionId);
             setConnectionState("reconnecting");
             appendTerminalLogs([
               {
@@ -370,6 +653,7 @@ export function useTerminalRuntime() {
               return;
             }
 
+            failSessionReady(activeSessionRef.current.sessionId);
             setConnectionState("idle");
             appendTerminalLogs([
               {
@@ -381,8 +665,10 @@ export function useTerminalRuntime() {
         },
       ),
     [
-      accessToken,
       appendTerminalLogs,
+      failSessionReady,
+      flushOutboundQueue,
+      markSessionReady,
       reattachCurrentSession,
       setConnectionState,
       setCurrentPath,
@@ -429,6 +715,7 @@ export function useTerminalRuntime() {
       setCurrentPath("/claude");
       resetTerminalInteraction();
       bootstrappedSessionIdRef.current = null;
+      resetSessionReadyState(null);
       return;
     }
 
@@ -441,10 +728,12 @@ export function useTerminalRuntime() {
     regenerateTraceId();
     resetTerminalInteraction();
     bootstrappedSessionIdRef.current = activeSession.sessionId;
+    resetSessionReadyState(activeSession.sessionId);
   }, [
     activeSession,
     activeWorker,
     regenerateTraceId,
+    resetSessionReadyState,
     resetTerminalInteraction,
     setCurrentPath,
     setTerminalLogs,
@@ -459,12 +748,14 @@ export function useTerminalRuntime() {
 
       fitAddonRef.current = null;
       flushedLogIndexRef.current = 0;
+      terminalSizeRef.current = null;
       return;
     }
 
     let disposed = false;
     let mountFrameId = 0;
     let fitFrameId = 0;
+    let resizeObserver: ResizeObserver | null = null;
 
     const mountTerminal = () => {
       if (disposed || xtermRef.current) {
@@ -495,11 +786,26 @@ export function useTerminalRuntime() {
 
       xterm.loadAddon(fitAddon);
       xterm.open(terminalHostElement);
-      fitAddon.fit();
 
       xtermRef.current = xterm;
       fitAddonRef.current = fitAddon;
       flushedLogIndexRef.current = 0;
+
+      const syncTerminalViewport = (forceResizeFrame = false) => {
+        fitAddon.fit();
+        const sizeChanged = setMeasuredTerminalSize(xterm.cols, xterm.rows);
+        if (forceResizeFrame || sizeChanged) {
+          void sendTerminalResize(forceResizeFrame);
+        }
+      };
+
+      syncTerminalViewport(true);
+
+      xterm.onResize(({ cols, rows }) => {
+        if (setMeasuredTerminalSize(cols, rows)) {
+          void sendTerminalResize();
+        }
+      });
 
       for (let i = 0; i < terminalLogs.length; i += 1) {
         const log = terminalLogs[i];
@@ -518,19 +824,37 @@ export function useTerminalRuntime() {
       }
 
       flushedLogIndexRef.current = terminalLogs.length;
-      fitAddon.fit();
-      fitFrameId = requestAnimationFrame(() => fitAddonRef.current?.fit());
+      syncTerminalViewport(true);
+      fitFrameId = requestAnimationFrame(() => {
+        fitAddonRef.current?.fit();
+        const term = xtermRef.current;
+        if (term && setMeasuredTerminalSize(term.cols, term.rows)) {
+          void sendTerminalResize();
+        }
+      });
+
+      resizeObserver = new ResizeObserver(() => {
+        syncTerminalViewport();
+      });
+      resizeObserver.observe(terminalHostElement);
     };
 
     mountFrameId = requestAnimationFrame(mountTerminal);
 
-    const handleResize = () => fitAddonRef.current?.fit();
+    const handleResize = () => {
+      fitAddonRef.current?.fit();
+      const term = xtermRef.current;
+      if (term && setMeasuredTerminalSize(term.cols, term.rows)) {
+        void sendTerminalResize();
+      }
+    };
     window.addEventListener("resize", handleResize);
 
     return () => {
       disposed = true;
       cancelAnimationFrame(mountFrameId);
       cancelAnimationFrame(fitFrameId);
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", handleResize);
 
       if (xtermRef.current) {
@@ -540,8 +864,9 @@ export function useTerminalRuntime() {
 
       fitAddonRef.current = null;
       flushedLogIndexRef.current = 0;
+      terminalSizeRef.current = null;
     };
-  }, [activeSession, terminalLogs]);
+  }, [activeSession, sendTerminalResize, setMeasuredTerminalSize]);
 
   useEffect(() => {
     if (!xtermRef.current) {
@@ -568,10 +893,14 @@ export function useTerminalRuntime() {
 
     flushedLogIndexRef.current = terminalLogs.length;
     fitAddonRef.current?.fit();
-  }, [terminalLogs]);
+    if (setMeasuredTerminalSize(term.cols, term.rows)) {
+      void sendTerminalResize();
+    }
+  }, [sendTerminalResize, setMeasuredTerminalSize, terminalLogs]);
 
   const disconnectCurrentServer = useCallback(async () => {
     await relayClient.disconnect();
+    failSessionReady(activeSessionRef.current?.sessionId);
     setConnectionState("idle");
     resetTerminalInteraction();
     appendTerminalLogs([
@@ -579,6 +908,7 @@ export function useTerminalRuntime() {
     ]);
   }, [
     appendTerminalLogs,
+    failSessionReady,
     relayClient,
     resetTerminalInteraction,
     setConnectionState,
@@ -608,7 +938,7 @@ export function useTerminalRuntime() {
       workers.find((worker) => worker.workerId === activeSession.workerId) ??
       null;
 
-    if (!boundWorker?.isOnline) {
+    if (!boundWorker) {
       const message = buildSessionAccessError(activeSession, boundWorker);
       setConnectionState("error");
       setManagementError(message);
@@ -617,8 +947,18 @@ export function useTerminalRuntime() {
     }
 
     try {
+      resetSessionReadyState(activeSession.sessionId);
       setConnectionState("connecting");
       setManagementError(null);
+
+      if (!boundWorker.isOnline) {
+        appendTerminalLogs([
+          {
+            type: "system",
+            text: `节点 ${boundWorker.displayName} 的在线快照尚未更新，先尝试直接附着当前会话...`,
+          },
+        ]);
+      }
 
       if (relayClient.isConnected()) {
         await relayClient.disconnect();
@@ -636,6 +976,25 @@ export function useTerminalRuntime() {
         },
       ]);
 
+      const measuredTerminalSize = terminalSizeRef.current;
+      if (measuredTerminalSize) {
+        await relayClient.sendMobileFrame(
+          activeSession.sessionId,
+          buildTerminalResizePayload(
+            measuredTerminalSize.cols,
+            measuredTerminalSize.rows,
+          ),
+          {
+            requestId: `sys-resize-init-${Date.now()}`,
+            traceId: traceIdRef.current,
+          },
+        );
+        lastSentTerminalSizeRef.current.set(
+          activeSession.sessionId,
+          `${measuredTerminalSize.cols}x${measuredTerminalSize.rows}`,
+        );
+      }
+
       await relayClient.sendMobileFrame(
         activeSession.sessionId,
         encoder.encode("__ct_init__"),
@@ -645,7 +1004,18 @@ export function useTerminalRuntime() {
         },
       );
 
-      return true;
+      const ready = await waitForSessionReady(activeSession.sessionId);
+      if (!ready) {
+        setConnectionState("idle");
+        appendTerminalLogs([
+          {
+            type: "system",
+            text: "Session 尚未 ready，已等待 relay 重新附着。",
+          },
+        ]);
+      }
+
+      return ready;
     } catch (error) {
       const message = (error as Error).message;
 
@@ -672,8 +1042,8 @@ export function useTerminalRuntime() {
       const displayMessage = message.includes("offline")
         ? `节点 ${boundWorker.displayName} 当前离线，无法连接该会话。`
         : message.includes("not allowed")
-          ? `该会话配置的工作目录不被当前 worker 允许，请重新选择目录或更换节点。\n${message}`
-          : `打开会话失败：${message}`;
+          ? "当前目录不允许在这个节点上执行，请重新选择目录或节点。"
+          : toUserFacingManagementError(message);
 
       setConnectionState("error");
       setManagementError(displayMessage);
@@ -685,11 +1055,22 @@ export function useTerminalRuntime() {
     appendTerminalLogs,
     handleAuthFailure,
     relayClient,
+    resetSessionReadyState,
     setConnectionState,
     setCurrentPath,
     setManagementError,
+    waitForSessionReady,
     workers,
+    sendTerminalResize,
   ]);
+
+  useEffect(() => {
+    if (!activeSession || connectionState !== "connected") {
+      return;
+    }
+
+    void sendTerminalResize(true);
+  }, [activeSession, connectionState, sendTerminalResize]);
 
   useEffect(() => {
     if (!routedSessionId) {
@@ -717,10 +1098,15 @@ export function useTerminalRuntime() {
       return;
     }
 
+    if (!activeSession || activeSession.sessionId !== routedSessionId) {
+      return;
+    }
+
     if (connectionState === "idle" && !relayClient.isConnected()) {
       void connectCurrentSession();
     }
   }, [
+    activeSession,
     connectCurrentSession,
     connectionState,
     hasLoadedManagementSnapshot,
@@ -743,14 +1129,14 @@ export function useTerminalRuntime() {
     }
 
     if (connectionState === "connected" && relayClient.isConnected()) {
-      return true;
+      return readySessionIdRef.current === activeSession.sessionId;
     }
 
     if (
       connectionState === "connecting" ||
       connectionState === "reconnecting"
     ) {
-      return false;
+      return waitForSessionReady(activeSession.sessionId);
     }
 
     return connectCurrentSession();
@@ -760,55 +1146,119 @@ export function useTerminalRuntime() {
     connectCurrentSession,
     connectionState,
     relayClient,
+    waitForSessionReady,
   ]);
+
+  const sendOrQueueFrame = useCallback(
+    async (
+      frame: OutboundFrame,
+      pendingMessage: string,
+      failureMessagePrefix: string,
+    ) => {
+      if (
+        readySessionIdRef.current !== frame.sessionId ||
+        !relayClient.isConnected()
+      ) {
+        enqueueOutboundFrame(frame, pendingMessage);
+        const activeSessionId = activeSessionRef.current?.sessionId;
+        if (
+          activeSessionId === frame.sessionId &&
+          connectionState !== "connecting" &&
+          connectionState !== "reconnecting"
+        ) {
+          void connectCurrentSession();
+        }
+        return true;
+      }
+
+      try {
+        await relayClient.sendMobileFrame(
+          frame.sessionId,
+          frame.payload,
+          frame.metadata,
+        );
+        return true;
+      } catch (error) {
+        enqueueOutboundFrame(frame, pendingMessage);
+        appendTerminalLogs([
+          {
+            type: "system",
+            text: `${failureMessagePrefix}: ${(error as Error).message}`,
+          },
+        ]);
+        failSessionReady(frame.sessionId);
+        setConnectionState("idle");
+        return false;
+      }
+    },
+    [
+      appendTerminalLogs,
+      connectCurrentSession,
+      connectionState,
+      enqueueOutboundFrame,
+      failSessionReady,
+      relayClient,
+      setConnectionState,
+    ],
+  );
 
   const sendCommand = useCallback(
     async (command: string, displayText?: string) => {
       const isEscapeCommand = command === "\u001b";
       const isEnterCommand = command === "\n";
+      const isTabCommand = command === "\t";
+      const isShiftTabCommand = command === "\u001b[Z";
 
-      if (!command.trim() && !isEscapeCommand && !isEnterCommand) {
+      if (
+        !command.trim() &&
+        !isEscapeCommand &&
+        !isEnterCommand &&
+        !isTabCommand &&
+        !isShiftTabCommand
+      ) {
         return;
       }
 
       resetTerminalInteraction();
 
-      const connected = await ensureTerminalConnection();
-      if (!connected || !activeSession) {
-        appendTerminalLogs([
-          { type: "system", text: "Relay 正在连接中，请稍候再发送。" },
-        ]);
+      if (!activeSession) {
+        appendTerminalLogs([{ type: "system", text: "请先创建或选择一个 session。" }]);
         return;
       }
 
       const requestId = createRequestId();
       const commandDisplay =
         displayText ??
-        (isEscapeCommand ? "<Esc>" : isEnterCommand ? "<Enter>" : command);
+        (isEscapeCommand
+          ? "<Esc>"
+          : isEnterCommand
+            ? "<Enter>"
+            : isTabCommand
+              ? "<Tab>"
+              : isShiftTabCommand
+                ? "<Shift+Tab>"
+                : command);
 
       appendTerminalLogs([{ type: "command", text: commandDisplay }]);
 
-      try {
-        await relayClient.sendMobileFrame(
-          activeSession.sessionId,
-          encoder.encode(command),
-          {
+      await sendOrQueueFrame(
+        {
+          sessionId: activeSession.sessionId,
+          payload: encoder.encode(command),
+          metadata: {
             requestId,
             traceId: traceIdRef.current,
           },
-        );
-      } catch (error) {
-        appendTerminalLogs([
-          { type: "system", text: `Send failed: ${(error as Error).message}` },
-        ]);
-      }
+        },
+        "Relay 正在连接或恢复中，命令已加入待发送队列。",
+        "Send failed",
+      );
     },
     [
       activeSession,
       appendTerminalLogs,
-      ensureTerminalConnection,
-      relayClient,
       resetTerminalInteraction,
+      sendOrQueueFrame,
     ],
   );
 
@@ -827,6 +1277,13 @@ export function useTerminalRuntime() {
       await sendCommand(action.sendText, action.displayText ?? action.label);
     },
     [focusCommandInput, sendCommand, setIsInteractionCustomInputVisible],
+  );
+
+  const handleRuntimeShortcut = useCallback(
+    async (shortcut: { sendText: string; displayText: string }) => {
+      await sendCommand(shortcut.sendText, shortcut.displayText);
+    },
+    [sendCommand],
   );
 
   const handleAddAttachment = useCallback(async () => {
@@ -939,11 +1396,8 @@ export function useTerminalRuntime() {
     async (command: string, attachments: PendingAttachment[]) => {
       resetTerminalInteraction();
 
-      const connected = await ensureTerminalConnection();
-      if (!connected || !activeSession) {
-        appendTerminalLogs([
-          { type: "system", text: "Relay 正在连接中，请稍候再发送。" },
-        ]);
+      if (!activeSession) {
+        appendTerminalLogs([{ type: "system", text: "请先创建或选择一个 session。" }]);
         return false;
       }
 
@@ -958,32 +1412,24 @@ export function useTerminalRuntime() {
         },
       ]);
 
-      try {
-        await relayClient.sendMobileFrame(
-          activeSession.sessionId,
-          buildAttachmentCommandPayload(command, attachments),
-          {
+      return sendOrQueueFrame(
+        {
+          sessionId: activeSession.sessionId,
+          payload: buildAttachmentCommandPayload(command, attachments),
+          metadata: {
             requestId,
             traceId: traceIdRef.current,
           },
-        );
-        return true;
-      } catch (error) {
-        appendTerminalLogs([
-          {
-            type: "system",
-            text: `Attachment send failed: ${(error as Error).message}`,
-          },
-        ]);
-        return false;
-      }
+        },
+        "Relay 正在连接或恢复中，附件命令已加入待发送队列。",
+        "Attachment send failed",
+      );
     },
     [
       activeSession,
       appendTerminalLogs,
-      ensureTerminalConnection,
-      relayClient,
       resetTerminalInteraction,
+      sendOrQueueFrame,
     ],
   );
 
@@ -1022,11 +1468,8 @@ export function useTerminalRuntime() {
   const handleRunDoctor = useCallback(async () => {
     resetTerminalInteraction();
 
-    const connected = await ensureTerminalConnection();
-    if (!connected || !activeSession) {
-      appendTerminalLogs([
-        { type: "system", text: "Relay 正在连接中，请稍候再执行 doctor。" },
-      ]);
+    if (!activeSession) {
+      appendTerminalLogs([{ type: "system", text: "请先创建或选择一个 session。" }]);
       return;
     }
 
@@ -1039,34 +1482,34 @@ export function useTerminalRuntime() {
       },
     ]);
 
-    try {
-      await relayClient.sendMobileFrame(
-        activeSession.sessionId,
-        buildDoctorCommandPayload(),
-        {
+    const accepted = await sendOrQueueFrame(
+      {
+        sessionId: activeSession.sessionId,
+        payload: buildDoctorCommandPayload(),
+        metadata: {
           requestId,
           traceId: traceIdRef.current,
         },
-      );
-      await showNativeToast("已触发 worker doctor");
-    } catch (error) {
-      appendTerminalLogs([
-        {
-          type: "system",
-          text: `Doctor send failed: ${(error as Error).message}`,
-        },
-      ]);
+      },
+      "Relay 正在连接或恢复中，doctor 请求已加入待发送队列。",
+      "Doctor send failed",
+    );
+
+    if (accepted) {
+      await showNativeToast("已触发或排队 worker doctor");
+    } else {
       await showNativeAlert({
         title: "Doctor 执行失败",
-        message: (error as Error).message,
+        message: "doctor 请求发送失败，请查看终端日志。",
       });
     }
   }, [
     activeSession,
     appendTerminalLogs,
-    ensureTerminalConnection,
-    relayClient,
     resetTerminalInteraction,
+    sendOrQueueFrame,
+    showNativeAlert,
+    showNativeToast,
   ]);
 
   const handleLeaveTerminal = useCallback(() => {
@@ -1076,17 +1519,19 @@ export function useTerminalRuntime() {
   return {
     activeSession,
     activeWorker,
+    activeAgentFamily,
     currentPath,
     connectionState,
     recoverySnapshot,
     errorMessage: managementError,
+    runtimeShortcutLabel,
+    runtimeShortcuts,
     terminalInteraction,
     showInteractionComposer,
     shouldHideDefaultComposer,
     inputMode,
     inputValue,
     isPressing,
-    pendingAttachments,
     traceId,
     terminalHostRef,
     commandInputRef,
@@ -1097,6 +1542,7 @@ export function useTerminalRuntime() {
     handleLeaveTerminal,
     handleAddAttachment,
     handleRemoveAttachment,
+    handleRuntimeShortcut,
     handleTerminalInteractionAction,
     handleVoicePressStart,
     handleVoiceRelease,

@@ -1,12 +1,10 @@
 import {
+  AlertTriangle,
   ChevronLeft,
   FolderTree,
-  Keyboard,
-  Mic,
-  Plus,
+  LoaderCircle,
   Send,
   ShieldCheck,
-  Stethoscope,
   Terminal as TermIcon,
 } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
@@ -20,12 +18,11 @@ import type {
   TerminalInteraction,
   TerminalInteractionAction,
 } from "./interactionDetector";
-import { PendingAttachmentList } from "./PendingAttachmentList";
-import type { PendingAttachment } from "./terminalAttachmentTypes";
 import type {
   TerminalConnectionState,
   TerminalRecoverySnapshot,
 } from "./terminalRecovery";
+import type { TerminalShortcut } from "./terminalShortcuts";
 
 type TerminalPageProps = {
   activeSession: GatewaySession | null;
@@ -34,30 +31,75 @@ type TerminalPageProps = {
   connectionState: TerminalConnectionState;
   recoverySnapshot: TerminalRecoverySnapshot | null;
   errorMessage: string | null;
+  runtimeShortcutLabel: string;
+  runtimeShortcuts: TerminalShortcut[];
   terminalInteraction: TerminalInteraction | null;
   showInteractionComposer: boolean;
   shouldHideDefaultComposer: boolean;
-  inputMode: "text" | "voice";
   inputValue: string;
-  isPressing: boolean;
-  pendingAttachments: PendingAttachment[];
   terminalHostRef: React.RefObject<HTMLDivElement | null>;
   commandInputRef: React.RefObject<HTMLInputElement | null>;
   onBack: () => void | Promise<void>;
+  onRuntimeShortcut: (shortcut: TerminalShortcut) => void | Promise<void>;
   onInteractionAction: (
     action: TerminalInteractionAction,
   ) => void | Promise<void>;
-  onInputModeToggle: () => void;
   onInputValueChange: (value: string) => void;
   onInputSubmit: () => void | Promise<void>;
-  onAddAttachment: () => void | Promise<void>;
-  onRemoveAttachment: (attachmentId: string) => void | Promise<void>;
-  onVoicePressStart: () => void | Promise<void>;
-  onVoicePressEnd: () => void | Promise<void>;
-  onRunDoctor: () => void | Promise<void>;
   onCloseInteractionComposer: () => void;
   onReconnect: () => void | Promise<void>;
 };
+
+function getTerminalStatusPresentation(
+  connectionState: TerminalConnectionState,
+  recoverySnapshot: TerminalRecoverySnapshot | null,
+) {
+  if (recoverySnapshot?.phase === "error") {
+    return {
+      label: "错误",
+      icon: <AlertTriangle size={18} className="text-red-500" />,
+      className: "text-red-500",
+    };
+  }
+
+  if (
+    recoverySnapshot?.phase === "worker-offline" ||
+    recoverySnapshot?.phase === "detached"
+  ) {
+    return {
+      label: recoverySnapshot.phase === "detached" ? "脱附" : "离线",
+      icon: <AlertTriangle size={18} className="text-amber-500" />,
+      className: "text-amber-500",
+    };
+  }
+
+  if (
+    connectionState === "connecting" ||
+    connectionState === "reconnecting" ||
+    recoverySnapshot?.phase === "booting" ||
+    recoverySnapshot?.phase === "reattaching"
+  ) {
+    return {
+      label: connectionState === "reconnecting" ? "重连中" : "连接中",
+      icon: <LoaderCircle size={18} className="animate-spin text-cyan-400" />,
+      className: "text-cyan-400",
+    };
+  }
+
+  if (connectionState === "connected") {
+    return {
+      label: "在线",
+      icon: <ShieldCheck size={18} className="text-green-500" />,
+      className: "text-green-500",
+    };
+  }
+
+  return {
+    label: connectionState.toUpperCase(),
+    icon: <ShieldCheck size={18} className="text-gray-500" />,
+    className: "text-gray-500",
+  };
+}
 
 export function TerminalPage({
   activeSession,
@@ -66,28 +108,27 @@ export function TerminalPage({
   connectionState,
   recoverySnapshot,
   errorMessage,
+  runtimeShortcutLabel,
+  runtimeShortcuts,
   terminalInteraction,
   showInteractionComposer,
   shouldHideDefaultComposer,
-  inputMode,
   inputValue,
-  isPressing,
-  pendingAttachments,
   terminalHostRef,
   commandInputRef,
   onBack,
+  onRuntimeShortcut,
   onInteractionAction,
-  onInputModeToggle,
   onInputValueChange,
   onInputSubmit,
-  onAddAttachment,
-  onRemoveAttachment,
-  onVoicePressStart,
-  onVoicePressEnd,
-  onRunDoctor,
   onCloseInteractionComposer,
   onReconnect,
 }: TerminalPageProps) {
+  const terminalStatus = getTerminalStatusPresentation(
+    connectionState,
+    recoverySnapshot,
+  );
+
   if (!activeSession) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-black px-6 text-center">
@@ -95,11 +136,9 @@ export function TerminalPage({
           <TermIcon size={28} />
         </div>
         <div>
-          <div className="text-lg font-semibold text-white">
-            No Active Session
-          </div>
+          <div className="text-lg font-semibold text-white">没有可用会话</div>
           <div className="mt-1 text-sm text-gray-500">
-            先回到 New Session 或 Home，选一个正式会话再进入 terminal。
+            先返回会话列表，选择一个会话后再进入终端。
           </div>
         </div>
       </div>
@@ -107,7 +146,7 @@ export function TerminalPage({
   }
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col overflow-hidden bg-black animate-in fade-in duration-300">
+    <div className="absolute inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-black animate-in fade-in duration-300">
       <div className="flex items-center justify-between border-b border-[#111] bg-[#0a0a0a] px-3 py-2">
         <button
           type="button"
@@ -135,29 +174,49 @@ export function TerminalPage({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 p-1.5">
-          <ShieldCheck size={18} className="text-green-500" />
-          <span
-            data-testid="status"
-            className={`text-[10px] ${
-              connectionState === "connected"
-                ? "text-green-500"
-                : connectionState === "reconnecting"
-                  ? "text-amber-500"
-                  : connectionState === "error"
-                    ? "text-red-500"
-                    : "text-gray-500"
-            }`}
-          >
-            {connectionState.toUpperCase()}
-          </span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 p-1.5">
+            {terminalStatus.icon}
+            <span
+              data-testid="status"
+              className={`text-[10px] ${terminalStatus.className}`}
+            >
+              {terminalStatus.label}
+            </span>
+          </div>
         </div>
       </div>
 
       <div
         data-testid="terminal-output"
-        className="flex-1 overflow-hidden bg-black p-2"
+        className="min-h-0 flex-1 overflow-hidden bg-black"
       >
+        <div className="border-b border-[#111] bg-[#050505] px-3 py-2">
+          <div className="mb-2 text-[10px] font-semibold tracking-wide text-gray-500 uppercase">
+            {runtimeShortcutLabel}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {runtimeShortcuts.map((shortcut) => (
+              <button
+                key={shortcut.id}
+                type="button"
+                onClick={() => {
+                  void onRuntimeShortcut(shortcut);
+                }}
+                className="rounded-lg border border-[#1f2a30] bg-[#0a1114] px-3 py-2 text-left transition-colors hover:border-cyan-700 hover:bg-[#0d161a]"
+                title={shortcut.description}
+              >
+                <div className="text-[11px] font-semibold text-cyan-300">
+                  {shortcut.label}
+                </div>
+                <div className="mt-0.5 text-[10px] text-gray-500">
+                  {shortcut.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {recoverySnapshot ? (
           <TerminalRecoveryBanner
             snapshot={recoverySnapshot}
@@ -165,7 +224,7 @@ export function TerminalPage({
           />
         ) : null}
 
-        {errorMessage && (
+        {errorMessage && recoverySnapshot?.phase !== "error" && (
           <div className="mb-2 rounded-2xl border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
             {errorMessage}
           </div>
@@ -174,11 +233,6 @@ export function TerminalPage({
       </div>
 
       <div className="border-t border-[#111] bg-[#080808] px-2 pt-2 pb-6">
-        <PendingAttachmentList
-          attachments={pendingAttachments}
-          onRemove={onRemoveAttachment}
-        />
-
         {terminalInteraction && (
           <div className="mx-auto max-w-4xl">
             <TerminalInteractionBar
@@ -201,100 +255,33 @@ export function TerminalPage({
                 type="button"
                 onClick={onCloseInteractionComposer}
                 className="rounded-xl border border-[#223038] px-3 py-2 text-[11px] text-gray-300"
-              >
-                返回选项
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onInputModeToggle}
-                className="p-2 text-gray-600"
-                aria-label="toggle input mode"
-                title="toggle input mode"
-              >
-                {inputMode === "text" ? (
-                  <Mic size={24} />
-                ) : (
-                  <Keyboard size={24} />
-                )}
-              </button>
-            )}
+                >
+                  返回选项
+                </button>
+            ) : null}
 
             <div className="h-10.5 flex-1">
-              {showInteractionComposer || inputMode === "text" ? (
-                <div className="flex h-full flex-1 items-center rounded-xl border border-[#222] bg-[#151515] px-3 py-1.5">
-                  <input
-                    ref={commandInputRef}
-                    data-testid="command-input"
-                    type="text"
-                    placeholder={
-                      showInteractionComposer
-                        ? "输入你想给当前 agent 的自定义回复..."
-                        : "让当前 agent 在当前目录里执行任务..."
+              <div className="flex h-full flex-1 items-center rounded-xl border border-[#222] bg-[#151515] px-3 py-1.5">
+                <input
+                  ref={commandInputRef}
+                  data-testid="command-input"
+                  type="text"
+                  placeholder={
+                    showInteractionComposer
+                      ? "输入你想给当前 agent 的自定义回复..."
+                      : "让当前 agent 在当前目录里执行任务..."
+                  }
+                  className="flex-1 border-none bg-transparent font-sans text-[14px] text-gray-200 outline-none"
+                  value={inputValue}
+                  onChange={(event) => onInputValueChange(event.target.value)}
+                  onKeyDown={async (event) => {
+                    if (event.key === "Enter") {
+                      await onInputSubmit();
                     }
-                    className="flex-1 border-none bg-transparent font-sans text-[14px] text-gray-200 outline-none"
-                    value={inputValue}
-                    onChange={(event) => onInputValueChange(event.target.value)}
-                    onKeyDown={async (event) => {
-                      if (event.key === "Enter") {
-                        await onInputSubmit();
-                      }
-                    }}
-                  />
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onMouseDown={() => {
-                    void onVoicePressStart();
                   }}
-                  onMouseUp={() => {
-                    void onVoicePressEnd();
-                  }}
-                  onTouchStart={() => {
-                    void onVoicePressStart();
-                  }}
-                  onTouchEnd={() => {
-                    void onVoicePressEnd();
-                  }}
-                  className={`h-full flex-1 rounded-xl text-sm font-bold transition-all ${
-                    isPressing
-                      ? "scale-[0.98] bg-[#333] text-gray-400"
-                      : "border border-[#222] bg-[#1a1a1a] text-gray-300"
-                  }`}
-                >
-                  {isPressing ? "正在收音..." : "按住 说话"}
-                </button>
-              )}
+                />
+              </div>
             </div>
-
-            {!showInteractionComposer && (
-              <button
-                type="button"
-                onClick={() => {
-                  void onRunDoctor();
-                }}
-                className="p-2 text-gray-600"
-                aria-label="run worker doctor"
-                title="run worker doctor"
-              >
-                <Stethoscope size={22} />
-              </button>
-            )}
-
-            {!showInteractionComposer && (
-              <button
-                type="button"
-                onClick={() => {
-                  void onAddAttachment();
-                }}
-                className="p-2 text-gray-600"
-                aria-label="add attachment"
-                title="add attachment"
-              >
-                <Plus size={24} />
-              </button>
-            )}
 
             <button
               type="button"

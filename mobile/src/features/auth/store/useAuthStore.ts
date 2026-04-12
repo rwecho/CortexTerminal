@@ -1,10 +1,14 @@
 import { create } from "zustand";
 import type { GatewayPrincipal } from "../../../lib/gatewayAuthClient";
-import { gatewayTokenStorageKey } from "../../app/config";
+import {
+  persistGatewayAuthSession,
+  type PersistedGatewayAuthSession,
+} from "../authSessionStorage";
 
 type AuthMode = "login" | "register";
 
 type AuthStore = {
+  authSession: PersistedGatewayAuthSession | null;
   accessToken: string | null;
   currentPrincipal: GatewayPrincipal | null;
   isAuthBootstrapping: boolean;
@@ -16,6 +20,7 @@ type AuthStore = {
   authError: string | null;
   isAuthenticating: boolean;
   setAccessToken: (accessToken: string | null) => void;
+  setAuthSession: (authSession: PersistedGatewayAuthSession | null) => void;
   setCurrentPrincipal: (principal: GatewayPrincipal | null) => void;
   setIsAuthBootstrapping: (isAuthBootstrapping: boolean) => void;
   setAuthMode: (authMode: AuthMode) => void;
@@ -26,26 +31,14 @@ type AuthStore = {
   setAuthError: (authError: string | null) => void;
   setIsAuthenticating: (isAuthenticating: boolean) => void;
   applyAuthentication: (
-    accessToken: string,
+    authSession: PersistedGatewayAuthSession,
     principal: GatewayPrincipal,
   ) => void;
   clearAuthentication: () => void;
 };
 
-function persistAccessToken(accessToken: string | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (accessToken) {
-    window.localStorage.setItem(gatewayTokenStorageKey, accessToken);
-    return;
-  }
-
-  window.localStorage.removeItem(gatewayTokenStorageKey);
-}
-
 export const useAuthStore = create<AuthStore>((set) => ({
+  authSession: null,
   accessToken: null,
   currentPrincipal: null,
   isAuthBootstrapping: true,
@@ -57,8 +50,27 @@ export const useAuthStore = create<AuthStore>((set) => ({
   authError: null,
   isAuthenticating: false,
   setAccessToken: (accessToken) => {
-    persistAccessToken(accessToken);
-    set({ accessToken });
+    set((state) => {
+      const nextAuthSession = state.authSession
+        ? {
+            ...state.authSession,
+            accessToken: accessToken ?? "",
+          }
+        : null;
+
+      persistGatewayAuthSession(nextAuthSession);
+      return {
+        accessToken,
+        authSession: nextAuthSession,
+      };
+    });
+  },
+  setAuthSession: (authSession) => {
+    persistGatewayAuthSession(authSession);
+    set({
+      authSession,
+      accessToken: authSession?.accessToken ?? null,
+    });
   },
   setCurrentPrincipal: (currentPrincipal) => set({ currentPrincipal }),
   setIsAuthBootstrapping: (isAuthBootstrapping) => set({ isAuthBootstrapping }),
@@ -69,17 +81,19 @@ export const useAuthStore = create<AuthStore>((set) => ({
   setAuthEmail: (authEmail) => set({ authEmail }),
   setAuthError: (authError) => set({ authError }),
   setIsAuthenticating: (isAuthenticating) => set({ isAuthenticating }),
-  applyAuthentication: (accessToken, currentPrincipal) => {
-    persistAccessToken(accessToken);
+  applyAuthentication: (authSession, currentPrincipal) => {
+    persistGatewayAuthSession(authSession);
     set({
-      accessToken,
+      authSession,
+      accessToken: authSession.accessToken,
       currentPrincipal,
       authError: null,
     });
   },
   clearAuthentication: () => {
-    persistAccessToken(null);
+    persistGatewayAuthSession(null);
     set({
+      authSession: null,
       accessToken: null,
       currentPrincipal: null,
       authError: null,

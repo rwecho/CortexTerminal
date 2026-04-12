@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 
 const int maxBufferLines = 2000;
-var relayKeepAliveInterval = TimeSpan.FromSeconds(5);
-var relayServerTimeout = TimeSpan.FromSeconds(15);
+var relayKeepAliveInterval = TimeSpan.FromSeconds(2);
+var relayServerTimeout = TimeSpan.FromSeconds(6);
 
 var workerOptions = WorkerHostOptions.LoadFromEnvironment();
 
@@ -68,6 +68,17 @@ async Task RequestShutdownAsync(string reason)
     }
 
     logger.LogInformation("[worker:shutdown] WorkerId={WorkerId}, Reason={Reason}", workerOptions.WorkerId, reason);
+
+    try
+    {
+        using var unregisterCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await gatewayManagementClient.UnregisterWorkerAsync(workerOptions.WorkerId, unregisterCts.Token);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[worker:shutdown] WorkerId={WorkerId}, graceful unregister failed.", workerOptions.WorkerId);
+    }
+
     cts.Cancel();
 
     if (connection is null || connection.State == HubConnectionState.Disconnected)
@@ -114,6 +125,9 @@ var sessionCoordinator = new WorkerSessionCoordinator(
     workerOptions.WorkerModelName,
     workerOptions.WorkerRuntimeCommand,
     workerOptions.WorkerAvailablePaths);
+var directoryBrowser = new WorkerDirectoryBrowser(
+    workerOptions.WorkerId,
+    workerOptions.WorkerAvailablePaths);
 var frameDispatcher = new WorkerMobileFrameDispatcher(
     sessionCoordinator,
     ringBuffer,
@@ -123,6 +137,22 @@ var frameDispatcher = new WorkerMobileFrameDispatcher(
 
 connection.On<string, string, string?, string?>("ReceiveFromMobile", async (sessionId, encryptedFrameBase64, requestId, traceId) =>
     await frameDispatcher.HandleAsync(sessionId, encryptedFrameBase64, requestId, traceId, cts.Token));
+connection.On<string?, Task<object?>>("BrowseDirectories", async requestedPath =>
+{
+    var response = await directoryBrowser.BrowseAsync(requestedPath, cts.Token);
+    return new
+    {
+        workerId = response.WorkerId,
+        requestedPath = response.RequestedPath,
+        entries = response.Entries.Select(entry => new
+        {
+            path = entry.Path,
+            name = entry.Name,
+            hasChildren = entry.HasChildren,
+            isRoot = entry.IsRoot
+        }).ToArray()
+    };
+});
 
 connection.Reconnected += async _ =>
 {

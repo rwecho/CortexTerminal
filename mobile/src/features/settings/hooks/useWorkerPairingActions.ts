@@ -5,7 +5,7 @@ import {
 } from "../../../lib/gatewayAuthClient";
 import { gatewayUrl } from "../../app/config";
 import { useAuthFailureHandler } from "../../app/hooks/useAuthFailureHandler";
-import { useAuthStore } from "../../auth/store/useAuthStore";
+import { getValidAccessToken } from "../../auth/authSessionService";
 import { useWorkerPairingStore } from "../store/useWorkerPairingStore";
 
 function resolveInstallCommands(
@@ -29,7 +29,6 @@ function resolveInstallCommands(
 }
 
 export function useWorkerPairingActions() {
-  const accessToken = useAuthStore((state) => state.accessToken);
   const setWorkerInstallCommands = useWorkerPairingStore(
     (state) => state.setWorkerInstallCommands,
   );
@@ -43,6 +42,8 @@ export function useWorkerPairingActions() {
   const authClient = useMemo(() => createGatewayAuthClient(gatewayUrl), []);
 
   const handleIssueWorkerInstallToken = useCallback(async () => {
+    const accessToken = await getValidAccessToken();
+
     if (!accessToken) {
       setWorkerInstallError("当前登录态已失效，请重新登录后再生成安装命令。");
       return;
@@ -69,7 +70,6 @@ export function useWorkerPairingActions() {
       setIsIssuingWorkerInstallToken(false);
     }
   }, [
-    accessToken,
     authClient,
     handleAuthFailure,
     setIsIssuingWorkerInstallToken,

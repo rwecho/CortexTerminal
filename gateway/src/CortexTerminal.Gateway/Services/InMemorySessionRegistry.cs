@@ -45,11 +45,10 @@ public sealed class InMemorySessionRegistry : ISessionRegistry
     {
         if (_workerIdByConnection.TryRemove(connectionId, out var workerId))
         {
-            _workerById.TryRemove(workerId, out _);
-
-            foreach (var kv in _workerBySession.Where(kv => string.Equals(kv.Value, workerId, StringComparison.Ordinal)))
+            if (_workerById.TryGetValue(workerId, out var currentConnectionId)
+                && string.Equals(currentConnectionId, connectionId, StringComparison.Ordinal))
             {
-                _workerBySession.TryRemove(kv.Key, out _);
+                _workerById.TryRemove(workerId, out _);
             }
         }
 

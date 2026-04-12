@@ -1,5 +1,4 @@
 import {
-  Activity,
   LayoutDashboard,
   Settings as SettingsIcon,
   Terminal as TermIcon,
@@ -14,7 +13,6 @@ type BottomNavigationProps = {
 const tabs: Array<{ id: View; label: string; icon: typeof LayoutDashboard }> = [
   { id: "home", icon: LayoutDashboard, label: "概览" },
   { id: "terminal", icon: TermIcon, label: "终端" },
-  { id: "audit", icon: Activity, label: "审计" },
   { id: "settings", icon: SettingsIcon, label: "设置" },
 ];
 

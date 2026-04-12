@@ -17,6 +17,12 @@ type RelayAttachmentCommandFrame = {
   }>;
 };
 
+type RelayTerminalResizeFrame = {
+  kind: "terminal-resize";
+  cols: number;
+  rows: number;
+};
+
 export function buildAttachmentCommandPayload(
   command: string,
   attachments: PendingAttachment[],
@@ -42,4 +48,17 @@ export function buildDoctorCommandPayload(): Uint8Array {
   return textEncoder.encode(
     `${relayControlPrefix}${JSON.stringify({ kind: "doctor-command" })}`,
   );
+}
+
+export function buildTerminalResizePayload(
+  cols: number,
+  rows: number,
+): Uint8Array {
+  const frame: RelayTerminalResizeFrame = {
+    kind: "terminal-resize",
+    cols,
+    rows,
+  };
+
+  return textEncoder.encode(`${relayControlPrefix}${JSON.stringify(frame)}`);
 }

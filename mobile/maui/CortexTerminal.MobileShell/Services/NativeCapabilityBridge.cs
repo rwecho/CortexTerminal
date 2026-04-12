@@ -15,8 +15,12 @@ namespace CortexTerminal.MobileShell.Services;
 public sealed class NativeCapabilityBridge(
     IAudioManager audioManager,
     IOptions<StartupConfigOptions> startupConfigOptions,
+    NativeManagementRealtimeService nativeManagementRealtimeService,
     ILogger<NativeCapabilityBridge> logger)
 {
+    private const string ManagementRealtimeCommandPrefix = "__cortex_management_realtime__:";
+    private const string ManagementRealtimeDisconnectCommand = "__cortex_management_realtime_disconnect__";
+
     private sealed record AlertResult(bool Confirmed);
     private sealed record FilesResult(bool Cancelled, object[] Files);
     private sealed record AudioRecordingStartResult(bool Success, bool AlreadyRecording = false, string? FileName = null);
@@ -28,6 +32,9 @@ public sealed class NativeCapabilityBridge(
         [property: JsonPropertyName("gatewayUrl")] string GatewayUrl,
         [property: JsonPropertyName("appVersion")] string AppVersion,
         [property: JsonPropertyName("appBuild")] string AppBuild);
+    private sealed record ManagementRealtimeConfigPayload(
+        [property: JsonPropertyName("gatewayUrl")] string GatewayUrl,
+        [property: JsonPropertyName("accessToken")] string AccessToken);
 
     private readonly JsonSerializerOptions jsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -106,6 +113,34 @@ public sealed class NativeCapabilityBridge(
 
     public Task<string> CopyTextAsync(string text)
     {
+        if (TryCreateManagementRealtimeCommand(text, out var managementRealtimeCommand))
+        {
+            return ExecuteSafeVoidAsync(() =>
+            {
+                nativeManagementRealtimeService.PublishBridgeState(
+                    managementRealtimeCommand is null
+                        ? "disconnect-command-received"
+                        : "configure-command-received");
+
+                if (managementRealtimeCommand is null)
+                {
+                    _ = RunManagementRealtimeCommandAsync(
+                        () => nativeManagementRealtimeService.DisconnectAsync(CancellationToken.None),
+                        "disconnect-failed");
+                    return Task.CompletedTask;
+                }
+
+                _ = RunManagementRealtimeCommandAsync(
+                    () => nativeManagementRealtimeService.ConfigureAsync(
+                        managementRealtimeCommand.GatewayUrl,
+                        managementRealtimeCommand.AccessToken,
+                        CancellationToken.None),
+                    "configure-failed");
+
+                return Task.CompletedTask;
+            });
+        }
+
         return ExecuteSafeVoidAsync(() => Clipboard.Default.SetTextAsync(text ?? string.Empty));
     }
 
@@ -122,6 +157,36 @@ public sealed class NativeCapabilityBridge(
     public Task<string> GetStartupConfigAsync()
     {
         return ExecuteSafeAsync(() => Task.FromResult(CreateStartupConfigPayload()));
+    }
+
+    public Task<string> ConfigureManagementRealtimeAsync(string payloadJson)
+    {
+        var payload = JsonSerializer.Deserialize<ManagementRealtimeConfigPayload>(payloadJson, jsonSerializerOptions)
+            ?? throw new InvalidOperationException("Management realtime payload is required.");
+
+        logger.LogInformation("Native bridge configuring management realtime for {GatewayUrl}.", payload.GatewayUrl);
+        return ExecuteSafeVoidAsync(() =>
+        {
+            _ = RunManagementRealtimeCommandAsync(
+                () => nativeManagementRealtimeService.ConfigureAsync(
+                    payload.GatewayUrl,
+                    payload.AccessToken,
+                    CancellationToken.None),
+                "configure-failed");
+            return Task.CompletedTask;
+        });
+    }
+
+    public Task<string> DisconnectManagementRealtimeAsync()
+    {
+        logger.LogInformation("Native bridge disconnecting management realtime.");
+        return ExecuteSafeVoidAsync(() =>
+        {
+            _ = RunManagementRealtimeCommandAsync(
+                () => nativeManagementRealtimeService.DisconnectAsync(CancellationToken.None),
+                "disconnect-failed");
+            return Task.CompletedTask;
+        });
     }
 
     public object CreateStartupConfigSnapshot()
@@ -325,6 +390,44 @@ public sealed class NativeCapabilityBridge(
             ".pdf" => "application/pdf",
             _ => "application/octet-stream"
         };
+    }
+
+    private bool TryCreateManagementRealtimeCommand(
+        string? text,
+        out ManagementRealtimeConfigPayload? payload)
+    {
+        payload = null;
+
+        if (string.Equals(text, ManagementRealtimeDisconnectCommand, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(text)
+            || !text.StartsWith(ManagementRealtimeCommandPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var payloadJson = text[ManagementRealtimeCommandPrefix.Length..];
+        payload = JsonSerializer.Deserialize<ManagementRealtimeConfigPayload>(payloadJson, jsonSerializerOptions)
+            ?? throw new InvalidOperationException("Management realtime payload is required.");
+        return true;
+    }
+
+    private async Task RunManagementRealtimeCommandAsync(
+        Func<Task> operation,
+        string errorState)
+    {
+        try
+        {
+            await operation();
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Native management realtime command failed: {ErrorState}", errorState);
+            nativeManagementRealtimeService.PublishBridgeError(errorState, exception.Message);
+        }
     }
 
     private static string GetPlatformName()

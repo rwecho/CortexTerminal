@@ -1,11 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  Activity,
-  Command,
-  RadioTower,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+import { Command, RadioTower, Search, ShieldCheck } from "lucide-react";
 import { PageShell } from "../../components/layout/PageShell";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
@@ -29,14 +23,6 @@ function getAuditIcon(category: string) {
       return RadioTower;
     default:
       return ShieldCheck;
-  }
-}
-
-function formatPayload(payloadJson: string) {
-  try {
-    return JSON.stringify(JSON.parse(payloadJson), null, 2);
-  } catch {
-    return payloadJson;
   }
 }
 
@@ -102,7 +88,13 @@ export function AuditPage({
                     }
                     onClick={() => setCategoryFilter(filter)}
                   >
-                    {filter === "all" ? "全部" : filter}
+                    {filter === "all"
+                      ? "全部"
+                      : filter === "session"
+                        ? "会话"
+                        : filter === "worker"
+                          ? "节点"
+                          : "命令"}
                   </Button>
                 ),
               )}
@@ -116,7 +108,7 @@ export function AuditPage({
               <Input
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
-                placeholder="搜索 session / worker / trace / summary"
+                placeholder="搜索会话、节点或事件"
                 className="pl-10"
               />
             </div>
@@ -179,16 +171,6 @@ export function AuditPage({
                       )}
                       {entry.workerId && <span>worker: {entry.workerId}</span>}
                     </div>
-                    {entry.payloadJson && (
-                      <details className="mt-3 rounded-xl bg-[#0a0f12] px-3 py-2">
-                        <summary className="cursor-pointer text-[11px] text-gray-400">
-                          查看原始 payload
-                        </summary>
-                        <pre className="mt-3 overflow-x-auto font-mono text-[10px] text-gray-400 whitespace-pre-wrap break-all">
-                          {formatPayload(entry.payloadJson)}
-                        </pre>
-                      </details>
-                    )}
                   </div>
                 </div>
               </CardContent>

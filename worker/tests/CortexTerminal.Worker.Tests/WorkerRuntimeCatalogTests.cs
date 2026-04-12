@@ -9,6 +9,8 @@ public sealed class WorkerRuntimeCatalogTests
     [InlineData("codex", "claude", "codex")]
     [InlineData("gemini", "claude", "gemini")]
     [InlineData("opencode", "claude", "opencode")]
+    [InlineData("codex", "/Users/echo/.nvm/versions/node/v22.18.0/bin/codex", "/Users/echo/.nvm/versions/node/v22.18.0/bin/codex")]
+    [InlineData("claude", "/tmp/claude-wrapper.sh", "/tmp/claude-wrapper.sh")]
     [InlineData(null, "claude", "claude")]
     public void ResolveRuntimeCommandForSession_ReturnsExpectedRuntime(
         string? requestedAgentFamily,

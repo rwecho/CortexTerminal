@@ -1,19 +1,30 @@
 using System.Text.Json;
 using CortexTerminal.MobileShell.Services;
+using Microsoft.Extensions.Logging;
 
 namespace CortexTerminal.MobileShell;
 
 public partial class MainPage : ContentPage
 {
 	private readonly NativeCapabilityBridge nativeCapabilityBridge;
+	private readonly NativeManagementRealtimeService nativeManagementRealtimeService;
+	private readonly ILogger<MainPage> logger;
 	private CancellationTokenSource? loadingTimeoutCts;
 	private bool isInitialized;
+	private bool canNavigateBackInWebView;
+	private string activeWebPath = "/";
 
-	public MainPage(NativeCapabilityBridge nativeCapabilityBridge)
+	public MainPage(
+		NativeCapabilityBridge nativeCapabilityBridge,
+		NativeManagementRealtimeService nativeManagementRealtimeService,
+		ILogger<MainPage> logger)
 	{
 		InitializeComponent();
 		this.nativeCapabilityBridge = nativeCapabilityBridge;
+		this.nativeManagementRealtimeService = nativeManagementRealtimeService;
+		this.logger = logger;
 		hybridWebView.SetInvokeJavaScriptTarget(nativeCapabilityBridge);
+		this.nativeManagementRealtimeService.RawMessageReady += OnNativeManagementRawMessageReady;
 	}
 
 	protected override void OnAppearing()
@@ -35,6 +46,38 @@ public partial class MainPage : ContentPage
 		loadingTimeoutCts?.Cancel();
 		loadingTimeoutCts = null;
 		base.OnDisappearing();
+	}
+
+	protected override void OnHandlerChanging(HandlerChangingEventArgs args)
+	{
+		if (args.NewHandler is null)
+		{
+			nativeManagementRealtimeService.RawMessageReady -= OnNativeManagementRawMessageReady;
+		}
+
+		base.OnHandlerChanging(args);
+	}
+
+	protected override bool OnBackButtonPressed()
+	{
+		if (!canNavigateBackInWebView)
+		{
+			return base.OnBackButtonPressed();
+		}
+
+		MainThread.BeginInvokeOnMainThread(async () =>
+		{
+			try
+			{
+				await hybridWebView.EvaluateJavaScriptAsync("window.__cortexHandleNativeBack?.() ?? false;");
+			}
+			catch (Exception exception)
+			{
+				logger.LogWarning(exception, "Failed to dispatch native back press to HybridWebView for route {ActiveWebPath}.", activeWebPath);
+			}
+		});
+
+		return true;
 	}
 
 	private void OnHybridWebViewLoaded(object? sender, EventArgs e)
@@ -69,18 +112,32 @@ public partial class MainPage : ContentPage
 							type = "initData",
 							payload = nativeCapabilityBridge.CreateStartupConfigSnapshot()
 						}));
-						statusMessageLabel.Text = "native startup config 已下发，等待 web app 就绪...";
+						statusMessageLabel.Text = "正在初始化应用…";
 					});
 					break;
 				case "appReady":
 					await MainThread.InvokeOnMainThreadAsync(async () =>
 					{
 						loadingTimeoutCts?.Cancel();
-						statusMessageLabel.Text = "React terminal shell 已就绪，正在进入工作台...";
+						statusMessageLabel.Text = "正在进入工作台…";
 						await loadingOverlay.FadeToAsync(0, 220, Easing.Linear);
 						loadingOverlay.IsVisible = false;
 						loadingIndicator.IsRunning = false;
 					});
+					break;
+				case "navigationState":
+					if (document.RootElement.TryGetProperty("payload", out var payloadElement))
+					{
+						canNavigateBackInWebView =
+							payloadElement.TryGetProperty("canGoBack", out var canGoBackElement) &&
+							canGoBackElement.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+							canGoBackElement.GetBoolean();
+
+						activeWebPath =
+							payloadElement.TryGetProperty("pathname", out var pathnameElement)
+								? pathnameElement.GetString() ?? "/"
+								: "/";
+					}
 					break;
 			}
 		}
@@ -117,6 +174,23 @@ public partial class MainPage : ContentPage
 			{
 				// no-op
 			}
+		});
+	}
+
+	private void OnNativeManagementRawMessageReady(string message)
+	{
+		logger.LogInformation("[native-management] MainPage forwarding raw message into HybridWebView: {Message}", message);
+		MainThread.BeginInvokeOnMainThread(async () =>
+		{
+			if (!isInitialized)
+			{
+				logger.LogWarning("[native-management] Dropping raw message because MainPage is not initialized yet.");
+				return;
+			}
+
+			var encodedMessage = JsonSerializer.Serialize(message);
+			await hybridWebView.EvaluateJavaScriptAsync(
+				$"window.__dispatchCortexNativeManagementMessage?.({encodedMessage});");
 		});
 	}
 }

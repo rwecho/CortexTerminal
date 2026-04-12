@@ -10,6 +10,7 @@ import {
 } from "./features/auth/store/useAuthStore";
 import { AuditRoute } from "./features/audit/routes/AuditRoute";
 import { BottomNavigationContainer } from "./features/layout/BottomNavigationContainer";
+import { NativeNavigationSync } from "./features/native/navigation/NativeNavigationSync";
 import { HomeRoute } from "./features/sessions/routes/HomeRoute";
 import { NewSessionRoute } from "./features/sessions/routes/NewSessionRoute";
 import { SettingsRoute } from "./features/settings/routes/SettingsRoute";
@@ -44,15 +45,13 @@ export default function App() {
       {isAuthBootstrapping ? (
         <div className="flex h-screen flex-col items-center justify-center gap-4 bg-black p-8 text-center">
           <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-cyan-600/30 bg-cyan-600/20">
-            <Fingerprint size={48} className="animate-pulse text-cyan-500" />
+            <Fingerprint size={48} className="text-cyan-500" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tighter text-white italic">
-              CORTEX TERMINAL
+            <h1 className="text-2xl font-bold tracking-tight text-white">
+              Cortex Terminal
             </h1>
-            <p className="mt-2 text-sm text-gray-500">
-              正在恢复登录态… Restoring authenticated session…
-            </p>
+            <p className="mt-2 text-sm text-gray-500">正在恢复登录状态…</p>
           </div>
         </div>
       ) : !isAppLoggedIn ? (
@@ -73,6 +72,8 @@ export default function App() {
         />
       ) : (
         <div className="flex h-screen flex-col overflow-hidden bg-black font-sans text-white select-none">
+          <NativeNavigationSync />
+
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <Routes>
               <Route path="/" element={<HomeRoute />} />
